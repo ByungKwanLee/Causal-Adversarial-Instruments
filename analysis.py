@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--base', default='plain', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 
@@ -34,10 +34,11 @@ parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
-args = parser.parse_args()
 
 # visualization parameter
-parser.add_argument('--vis_attack', default='true', type=str2bool)
+parser.add_argument('--vis_atk', default='false', type=str2bool)
+
+args = parser.parse_args()
 
 # Printing configurations
 print_configuration(args)
@@ -65,8 +66,14 @@ else:
     args.dataset, args.dataset, args.base, args.network, args.depth)
 
 print("This analysis : {}".format(checkpoint_name))
-checkpoint = torch.load(checkpoint_name, map_location=lambda storage, loc: storage.cuda())
-net.load_state_dict(checkpoint['net'])
+checkpoint = torch.load(checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
+
+from collections import OrderedDict
+new_state_dict = OrderedDict()
+for k, v in checkpoint.items():
+    name = k[7:] # remove `module.`
+    new_state_dict[name] = v
+net.load_state_dict(new_state_dict)
 
 # init criterion
 criterion = nn.CrossEntropyLoss()

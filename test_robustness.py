@@ -99,8 +99,6 @@ def test(net, testloader, criterion):
     print('---------------------------------------\n')
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-
-
     if gpu == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
