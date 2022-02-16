@@ -147,8 +147,6 @@ def visualizaition():
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
         outputs = net(inputs)
-        loss = criterion(outputs, targets)
-
 
 
 
