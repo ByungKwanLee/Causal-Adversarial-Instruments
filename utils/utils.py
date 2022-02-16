@@ -57,8 +57,13 @@ def feature_vis(img, inv, label, dataset=None):
         o_label = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
     elif dataset == 'tiny':
         o_label = list(range(1, 201))
-    else:
-        o_label = list(range(1, 1001))
+    elif dataset == 'imagenet':
+        f = open("./utils/imagenet_label.txt", 'r')
+        lines = f.readlines()
+        target = lines[label[0]].split(',')[0].split(':')[1].split("'")[1]
+        pred = lines[label[1]].split(',')[0].split(':')[1].split("'")[1]
+        o_label = [target, pred]
+        f.close()
 
     draw = ImageDraw.Draw(bg_img)
 
