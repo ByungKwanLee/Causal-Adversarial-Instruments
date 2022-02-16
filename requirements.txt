@@ -1,3 +1,4 @@
 matplotlib
 tqdm
 lucent
+scipy==1.4.1
