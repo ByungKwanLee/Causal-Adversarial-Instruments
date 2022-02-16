@@ -23,11 +23,11 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--base', default='adv', type=str)
-parser.add_argument('--batch_size', default=256, type=float)
+parser.add_argument('--batch_size', default=1, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 
 # attack parameter
@@ -45,18 +45,12 @@ print_configuration(args)
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
-
 # init dataloader
-_, testloader = get_fast_dataloader(dataset=args.dataset,
-                                         train_batch_size=1,
-                                         test_batch_size=args.batch_size)
+_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, gpu=args.gpu, dist=False)
 
 # init model
-net = get_network(network=args.network,
-                  depth=args.depth,
-                  dataset=args.dataset)
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=args.gpu)
 net = net.cuda()
-
 
 # Load Plain Network
 print('==> Loading Plain checkpoint..')
@@ -68,10 +62,8 @@ print("This test : {}".format(checkpoint_name))
 checkpoint = torch.load(checkpoint_name)
 net.load_state_dict(checkpoint['net'])
 
-
 # init criterion
 criterion = nn.CrossEntropyLoss()
-
 
 def test():
     net.eval()
@@ -146,12 +138,14 @@ def visualizaition():
         if args.vis_atk:
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
-        outputs = net(inputs)
+        int_output = net(inputs, pop=True)
+
+        print("ok")
 
 
 
 if __name__ == '__main__':
-    test()
+    visualizaition()
 
 
 
