@@ -1,4 +1,4 @@
 matplotlib
 tqdm
-lucent
+torch-lucent
 scipy==1.4.1
