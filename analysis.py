@@ -49,7 +49,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 _, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, gpu=args.gpu, dist=False)
 
 # init model
-net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=args.gpu)
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=int(args.gpu))
 net = net.cuda()
 
 # Load Plain Network
@@ -57,9 +57,15 @@ print('==> Loading Plain checkpoint..')
 assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
 
 # Loading checkpoint
-checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
-print("This test : {}".format(checkpoint_name))
-checkpoint = torch.load(checkpoint_name)
+
+if args.base == 'plain':
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+else:
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
+    args.dataset, args.dataset, args.base, args.network, args.depth)
+
+print("This analysis : {}".format(checkpoint_name))
+checkpoint = torch.load(checkpoint_name, map_location=lambda storage, loc: storage.cuda())
 net.load_state_dict(checkpoint['net'])
 
 # init criterion
@@ -129,7 +135,7 @@ def visualizaition():
         save_dir = './results/clean_vis_' + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
-    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset) if attack_name != 'Plain' else None
+    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
