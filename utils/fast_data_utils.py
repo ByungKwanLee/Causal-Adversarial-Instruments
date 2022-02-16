@@ -101,11 +101,11 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
             else:
                 image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((img_size, img_size), 1)]
 
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice(torch.device(this_device), non_blocking=True)]
+            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(torch.device(this_device), non_blocking=True)]
 
             image_pipeline.extend([
                 ToTensor(),
-                ToDevice(torch.device(this_device), non_blocking=True),
+                ToDevice_modified(torch.device(this_device), non_blocking=True),
                 ToTorchImage(),
                 Normalize_and_Convert(torch.float16, True)
             ])
@@ -127,7 +127,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
         loaders = {}
         for name in ['train', 'test']:
             image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice(torch.device(this_device)), Squeeze()]
+            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(torch.device(this_device)), Squeeze()]
             if name == 'train':
                 image_pipeline.extend([
                     RandomHorizontalFlip(),
@@ -135,7 +135,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
                 ])
             image_pipeline.extend([
                 ToTensor(),
-                ToDevice(torch.device(this_device), non_blocking=True),
+                ToDevice_modified(torch.device(this_device), non_blocking=True),
                 ToTorchImage(),
                 Normalize_and_Convert(torch.float16, True)
             ])
@@ -173,3 +173,33 @@ class Normalize_and_Convert(Operation):
 
     def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
         return replace(previous_state, dtype=self.target_dtype), None
+
+from ffcv.transforms import ToDevice
+class ToDevice_modified(ToDevice):
+    """Move tensor to device.
+
+    Parameters
+    ----------
+    device: torch.device
+        Device to move to.
+    non_blocking: bool
+        Asynchronous if copying from CPU to GPU.
+    """
+    def __init__(self, device, non_blocking=True):
+        super(ToDevice_modified, self).__init__(device, non_blocking)
+
+    def generate_code(self):
+        def to_device(inp, dst):
+            if len(inp.shape) == 4:
+                if inp.is_contiguous(memory_format=torch.channels_last):
+                    dst = dst.reshape(inp.shape[0], inp.shape[2], inp.shape[3], inp.shape[1])
+                    dst = dst.permute(0, 3, 1, 2)
+
+            if len(inp.shape) == 0:
+                inp = inp.unsqueeze(0)
+
+            dst = dst[:inp.shape[0]]
+            dst.copy_(inp, non_blocking=self.non_blocking)
+            return dst
+
+        return to_device

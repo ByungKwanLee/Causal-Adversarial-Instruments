@@ -18,7 +18,6 @@ import warnings
 warnings.filterwarnings("ignore")
 from utils.utils import str2bool
 
-
 # fetch args
 parser = argparse.ArgumentParser()
 
