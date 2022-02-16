@@ -4,6 +4,8 @@ import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+from skimage.transform import resize
+from PIL import Image, ImageDraw, ImageFont
 
 def check_dir(dir_path):
     if not os.path.exists(dir_path):
@@ -31,6 +33,39 @@ def tensor_to_img_array(tensor):
     image = tensor.cpu().detach().numpy()
     image = np.transpose(image, [0, 2, 3, 1])
     return image
+
+def feature_vis(img, inv, label, dataset=None):
+    selectedFont = ImageFont.truetype(os.path.join('usr/share/fonts/', 'NanumGothic.ttf'), size=15)
+
+    img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
+
+    if img.shape[0] != 224:
+        img = resize(img, (224, 224), anti_aliasing=True)
+        inv = resize(inv, (224, 224), anti_aliasing=True)
+
+    ori_img = Image.fromarray((img * 255).astype(np.uint8))
+    ori_inv = Image.fromarray((inv * 255).astype(np.uint8))
+
+    bg_img = Image.new("RGB", (224 * 2 + 20 * 3, 224 * 1 + 40), color=(255, 255, 255))
+
+    bg_img.paste(ori_img, (20, 20))
+    bg_img.paste(ori_inv, (224 * 1 + 20 * 2, 20))
+
+    if dataset == 'svhn':
+        o_label = [str(i) for i in range(10)]
+    elif dataset == 'cifar10':
+        o_label = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    elif dataset == 'tiny':
+        o_label = list(range(1, 201))
+    else:
+        o_label = list(range(1, 1001))
+
+    draw = ImageDraw.Draw(bg_img)
+
+    draw.text((20, 0), 'Image: ' + str(o_label[label[0]]), fill='blue', font=selectedFont)
+    draw.text((224 * 1 + 20 * 2, 0), 'Inversion: ' + str(o_label[label[1]]), fill='red', font=selectedFont)
+
+    return bg_img
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     assert min_res <= max_res

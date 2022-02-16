@@ -152,12 +152,14 @@ def visualizaition():
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
         int_latent = net(inputs, pop=True)
+        inv = SpInversion(int_latent.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
 
-        inv = SpInversion(int_latent.clone(), net, dataset=args.dataset).invert(inputs)
+        _, pred = net(int_latent, int=True).max(1)
+        label = [targets.item(), pred.item()]
 
-        print("ok")
-
-
+        save_img = feature_vis(inputs, inv, label, dataset=args.dataset)
+        save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
+        print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
 if __name__ == '__main__':
     visualizaition()
