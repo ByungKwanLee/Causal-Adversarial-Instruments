@@ -1,7 +1,30 @@
 import os
+import torch
 import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
+import torch.nn.functional as F
+
+def check_dir(dir_path):
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+def torch_blur(tensor, out_c=3, ):
+    depth = tensor.shape[1]
+    weight = np.zeros([depth, depth, out_c, out_c])
+    for ch in range(depth):
+        weight_ch = weight[ch, ch, :, :]
+        weight_ch[ :  ,  :  ] = 0.5
+        weight_ch[1:-1, 1:-1] = 1.0
+    weight_t = torch.tensor(weight).float().cuda()
+    conv_f = lambda t: F.conv2d(t, weight_t, None, 1, 1)
+
+    return conv_f(tensor) / conv_f(torch.ones_like(tensor))
+
+def tensor_to_img_array(tensor):
+    image = tensor.cpu().detach().numpy()
+    image = np.transpose(image, [0, 2, 3, 1])
+    return image
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     assert min_res <= max_res

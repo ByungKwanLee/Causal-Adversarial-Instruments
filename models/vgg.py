@@ -39,13 +39,24 @@ class VGG(nn.Module):
         if init_weights:
             self._initialize_weights()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = (x - self.mean) / self.std # normalize by LBK
-        x = self.features(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.classifier(x)
-        return x
+    def forward(self, x: torch.Tensor, int: bool=False, pop: bool=False) -> torch.Tensor:
+        if int:
+            x = self.avgpool(x)
+            x = torch.flatten(x, 1)
+            x = self.classifier(x)
+            return x
+
+        else:
+            x = (x - self.mean) / self.std # normalize by LBK
+            x = self.features(x)
+
+            if pop:
+                return x
+
+            x = self.avgpool(x)
+            x = torch.flatten(x, 1)
+            x = self.classifier(x)
+            return x
 
     def _initialize_weights(self) -> None:
         for m in self.modules():

@@ -80,16 +80,27 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
-    def forward(self, x):
-        out = (x - self.mean) / self.std
-        out = self.conv1(out)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
-        out = self.avgpool(out)
-        out = out.view(-1, self.nChannels)
-        return self.fc(out)
+
+    def forward(self, x: torch.Tensor, int: bool=False, pop: bool=False):
+        if int:
+            out = self.avgpool(x)
+            out = out.view(-1, self.nChannels)
+            return self.fc(out)
+
+        else:
+            out = (x - self.mean) / self.std
+            out = self.conv1(out)
+            out = self.block1(out)
+            out = self.block2(out)
+            out = self.block3(out)
+            out = self.relu(self.bn1(out))
+
+            if pop:
+                return out
+
+            out = self.avgpool(out)
+            out = out.view(-1, self.nChannels)
+            return self.fc(out)
 
 def wide_resnet(depth=28, widen_factor=10, dataset='cifar10', mean=None, std=None):
     if dataset == 'cifar10' or dataset == 'svhn':
@@ -104,3 +115,6 @@ def wide_resnet(depth=28, widen_factor=10, dataset='cifar10', mean=None, std=Non
         raise NotImplementedError
     return WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.3,
                       mean=mean, std=std, dataset=dataset)
+
+
+

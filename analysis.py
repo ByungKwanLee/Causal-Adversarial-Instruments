@@ -3,6 +3,7 @@ import os
 import argparse
 import torch
 import torch.nn as nn
+import random
 
 from tqdm import tqdm
 from utils.fast_network_utils import get_network
@@ -34,6 +35,9 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
+
+# visualization parameter
+parser.add_argument('--vis_attack', default='true', type=str2bool)
 
 # Printing configurations
 print_configuration(args)
@@ -83,6 +87,7 @@ def test():
                                                    dataset=args.dataset) \
             if attack_name != 'Plain' else None
 
+
     for key in attack_module:
         total = 0
         correct = 0
@@ -115,6 +120,37 @@ def test():
     for key, score in zip(attack_module, attack_score):
         print(str(key), ' : ', str(score) + '(%)')
     print('---------------------------------------\n')
+
+def visualizaition():
+    v_seed = 777
+    torch.manual_seed(v_seed)
+    torch.cuda.manual_seed(v_seed)
+    np.random.seed(v_seed)
+    torch.random.manual_seed(v_seed)
+    random.seed(v_seed)
+
+    net.eval()
+
+    if args.vis_atk:
+        save_dir = './results/%s_vis_'%(str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+    else:
+        save_dir = './results/clean_vis_' + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+
+    check_dir(save_dir)
+    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset) if attack_name != 'Plain' else None
+
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+    for batch_idx, (inputs, targets) in prog_bar:
+        inputs, targets = inputs.cuda(), targets.cuda()
+
+        if args.vis_atk:
+            inputs = attack(inputs, targets) if args.eps != 0 else inputs
+
+        outputs = net(inputs)
+        loss = criterion(outputs, targets)
+
+
+
 
 if __name__ == '__main__':
     test()
