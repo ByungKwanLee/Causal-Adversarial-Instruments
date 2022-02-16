@@ -9,6 +9,12 @@ def check_dir(dir_path):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
+def Resize(size):
+    def inner(image_t):
+        return F.interpolate(image_t, size=size, mode='bilinear')
+
+    return inner
+
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]
     weight = np.zeros([depth, depth, out_c, out_c])

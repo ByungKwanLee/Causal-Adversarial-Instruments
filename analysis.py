@@ -9,6 +9,7 @@ from tqdm import tqdm
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
+from utils.visual_utils import *
 
 # attack loader
 from attack.fastattack import attack_loader
@@ -22,7 +23,7 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str) #imagenet cifar10 svhn tiny
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--base', default='plain', type=str)
@@ -150,7 +151,9 @@ def visualizaition():
         if args.vis_atk:
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
-        int_output = net(inputs, pop=True)
+        int_latent = net(inputs, pop=True)
+
+        inv = SpInversion(int_latent.clone(), net, dataset=args.dataset).invert(inputs)
 
         print("ok")
 

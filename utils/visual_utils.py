@@ -3,7 +3,7 @@ import warnings
 import torch.backends.cudnn as cudnn
 import scipy.ndimage as nd
 
-from utils import *
+from utils.utils import *
 from torchvision import transforms
 
 from lucent.optvis import render, param, transform, objectives
@@ -28,6 +28,11 @@ class SpInversion(object):
             self.blur_constraint = -0.5
             self.cos_constant = 1e-6
 
+        elif self.dataset == 'imagenet':
+            self.img_size = 224
+            self.blur_constraint = 1.0
+            self.cos_constant = 1e-6
+
         else:
             self.img_size = 32
             self.blur_constraint = 0.01
@@ -45,19 +50,19 @@ class SpInversion(object):
         std = x.std(dim=(2,3), keepdim=True)
         return (x-mean) / (std + 1e-10)
 
-    def invert(self, image, pop_number):
+    def invert(self, image):
         r_transforms = [transform.pad(8, mode='constant', constant_value=.5),
                         transform.jitter(8),
                         transform.random_scale([0.9, 0.95, 1.05, 1.1] + [1] * 4),
                         transform.random_rotate(list(range(-5, 5)) + [0] * 5),
                         transform.jitter(2),
-                        transform.Resize((self.img_size, self.img_size))]
+                        Resize((self.img_size, self.img_size))]
 
         self.model.eval()
 
         if self.fwd:
             images = image.cuda()
-            ref_acts = self.model(images, pop=pop_number).detach()
+            ref_acts = self.model(images, pop=True).detach()
         else:
             ref_acts = self.latent_z.detach()
 
@@ -65,7 +70,7 @@ class SpInversion(object):
         optimizer = torch.optim.Adam(params, lr=self.learning_rate)
 
         for i in range(self.epochs):
-            acts = self.model(transform.compose(r_transforms)(image_f()), pop=pop_number)
+            acts = self.model(transform.compose(r_transforms)(image_f()), pop=True)
 
             dot = (acts * ref_acts).sum()
             mag = torch.sqrt(torch.sum(ref_acts ** 2))

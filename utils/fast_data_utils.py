@@ -176,15 +176,6 @@ class Normalize_and_Convert(Operation):
 
 from ffcv.transforms import ToDevice
 class ToDevice_modified(ToDevice):
-    """Move tensor to device.
-
-    Parameters
-    ----------
-    device: torch.device
-        Device to move to.
-    non_blocking: bool
-        Asynchronous if copying from CPU to GPU.
-    """
     def __init__(self, device, non_blocking=True):
         super(ToDevice_modified, self).__init__(device, non_blocking)
 
