@@ -172,7 +172,6 @@ def net_visualize():
 
         save_img = network_vis(fig, layer_info, args.f_type)
         save_img.save(save_dir + '/L%d_P%d_N%d.png' % (sl, pu, nu))
-        print("\n [*] Inversion Img is saved")
 
     elif args.f_type == 'single':
         sl, su = 4, 1
@@ -182,7 +181,6 @@ def net_visualize():
 
         save_img = network_vis(fig, layer_info, args.f_type)
         save_img.save(save_dir + '/L%d_C%d.png' % (sl, su))
-        print("\n [*] Inversion Img is saved")
 
     elif args.f_type == 'combine':
         sl1, sl2, tu1, tu2 = 4, 4, 1, 2
@@ -191,12 +189,11 @@ def net_visualize():
 
         save_img = network_vis(fig, layer_info, args.f_type)
         save_img.save(save_dir + '/L%d_%d_C%d_%d.png' % (sl1, sl2, tu1, tu2))
-        print("\n [*] Inversion Img is saved")
 
     else:
         raise Exception(" [*] Wrong selection of visualization method .")
 
-
+    print("\n [*] Inversion Img is saved")
 
 if __name__ == '__main__':
     set_random(777)
