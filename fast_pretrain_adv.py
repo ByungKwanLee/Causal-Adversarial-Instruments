@@ -45,7 +45,7 @@ parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=1024, type=float)
-parser.add_argument('--test_batch_size', default=512, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter
@@ -229,9 +229,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # init criterion
     criterion = nn.CrossEntropyLoss()
 
-    start_epoch = 0
-
-    for epoch in range(start_epoch, args.epoch):
+    for epoch in range(args.epoch):
         train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu)
         test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu)
 
