@@ -8,6 +8,8 @@ import torch.nn.functional as F
 from skimage.transform import resize
 from PIL import Image, ImageDraw, ImageFont
 
+selectedFont = ImageFont.truetype(os.path.join('usr/share/fonts/', 'NanumGothic.ttf'), size=15)
+
 def set_random(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -42,8 +44,35 @@ def tensor_to_img_array(tensor):
     image = np.transpose(image, [0, 2, 3, 1])
     return image
 
+def network_vis(fig, layer_info, f_type):
+    bg_img = Image.new("RGB", (224 * len(fig[0]) + 20 * (len(fig[0]) + 1), 224 + 40), color=(255, 255, 255))
+
+    for i in range(len(fig[0])):
+        img = Image.fromarray((fig[0][i] * 255).astype(np.uint8))
+
+        bg_img.paste(img, (20 * (i + 1) + 224 * i, 20))
+
+    if f_type == 'posneg':
+        draw = ImageDraw.Draw(bg_img)
+        draw.text((20, 0), 'Positive: L%2d / C%3d' % (layer_info[0], layer_info[1]), fill='blue', font=selectedFont)
+        draw.text((224 + 40, 0), 'Negative: L%2d / C%3d' % (layer_info[0], layer_info[2]), fill='red', font=selectedFont)
+
+    elif f_type == 'single':
+        draw = ImageDraw.Draw(bg_img)
+        draw.text((20, 0), 'Single_L%2d_%3d' % (layer_info[0], layer_info[1]), fill='blue', font=selectedFont)
+
+    elif f_type == 'combine':
+        draw = ImageDraw.Draw(bg_img)
+        draw.text((20, 0), 'L%2d_%3d' % (layer_info[0], layer_info[2]), fill='blue', font=selectedFont)
+        draw.text((224 + 40, 0), 'L%2d_%3d' % (layer_info[1], layer_info[3]), fill='blue', font=selectedFont)
+        draw.text((224 * 2 + 60, 0), 'Combined', fill='red', font=selectedFont)
+
+    else:
+        raise Exception("Wrong argument of FV selection")
+
+    return bg_img
+
 def feature_vis(img, inv, label, dataset=None):
-    selectedFont = ImageFont.truetype(os.path.join('usr/share/fonts/', 'NanumGothic.ttf'), size=15)
 
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
 

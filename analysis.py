@@ -35,7 +35,7 @@ parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
 
 # visualization parameter
-parser.add_argument('--f_type', default='pn', type=str, help='option: pn / s / c')
+parser.add_argument('--f_type', default='combine', type=str, help='option: posneg / single / combine')
 
 args = parser.parse_args()
 
@@ -128,10 +128,10 @@ def test():
 def visualizaition():
     net.eval()
 
-    if args.attack == 'plain':
-        save_dir = './results/fv/clean_vis_' + str(args.dataset) + '_' + str(args.network)
+    if args.base == 'plain':
+        save_dir = './results/feature_vis/clean_vis_' + str(args.dataset) + '_' + str(args.network)
     else:
-        save_dir = './results/fv/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+        save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
@@ -140,7 +140,7 @@ def visualizaition():
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
 
-        if args.attack != 'plain':
+        if args.base != 'plain':
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
         int_latent = net(inputs, pop=True)
@@ -156,30 +156,52 @@ def visualizaition():
 def net_visualize():
     net.eval()
 
-    if args.attack:
-        save_dir = './results/nv/%s_clean_vis_' % (str(args.f_type)) + str(args.dataset) + '_' + str(args.network)
-
+    if args.base == 'plain':
+        save_dir = './results/net_vis/%s/clean_vis_' % (str(args.f_type)) + str(args.dataset) + '_' + str(args.network)
     else:
-        save_dir = './results/nv/%s_%s_vis_' % (str(args.f_type), str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+        save_dir = './results/net_vis/%s/%s_vis_' % (str(args.f_type), str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
 
     inv = NetInversion(net, network=args.network)
 
-    if args.f_type == 'pn':
-        inv.pn_invert()
-    elif args.f_type == 's':
-        inv.s_invert()
-    elif args.f_type == 'c':
-        inv.c_invert()
+    if args.f_type == 'posneg':
+        sl, pu, nu = 4, 1, 2
+        fig = inv.pos_neg_invert(selected_layer=sl, positive_unit=pu, negative_unit=nu)
+        layer_info = [sl, pu, nu]
 
-    save_img = net_vis(inputs, inv, label, dataset=args.dataset)
-    save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
-    print("\n [*] Inversion Img%d is saved" % (batch_idx))
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_P%d_N%d.png' % (sl, pu, nu))
+        print("\n [*] Inversion Img is saved")
+
+    elif args.f_type == 'single':
+        sl, su = 4, 1
+
+        fig = inv.single_invert(selected_layer=sl, target_unit=su)
+        layer_info = [sl, su]
+
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_C%d.png' % (sl, su))
+        print("\n [*] Inversion Img is saved")
+
+    elif args.f_type == 'combine':
+        sl1, sl2, tu1, tu2 = 4, 4, 1, 2
+        fig = inv.combine_invert(selected_layer1=sl1, selected_layer2=sl2, target_unit1=tu1, target_unit2=tu2)
+        layer_info = [sl1, sl2, tu1, tu2]
+
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_%d_C%d_%d.png' % (sl1, sl2, tu1, tu2))
+        print("\n [*] Inversion Img is saved")
+
+    else:
+        raise Exception(" [*] Wrong selection of visualization method .")
+
+
 
 if __name__ == '__main__':
     set_random(777)
-    visualizaition()
+    net_visualize()
+    #visualizaition()
 
 
 

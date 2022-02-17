@@ -95,13 +95,13 @@ class NetInversion(object):
         self.model = model
         self.network = network
 
-    def pn_invert(self, selected_layer, target_unit1, target_unit2):
+    def pos_neg_invert(self, selected_layer, positive_unit, negative_unit):
         param_f = lambda: param.image(224, batch=2)
         if self.network == 'vgg':
             s_layer = 'vgg_features_%d'%(selected_layer)
 
         elif self.network == 'resnet':
-            s_layer = 'vgg_features_%d' % (selected_layer)
+            s_layer = 'layer%d' % (selected_layer)
 
         elif self.network == 'dense':
             s_layer = 'vgg_features_%d' % (selected_layer)
@@ -112,25 +112,53 @@ class NetInversion(object):
         else:
             raise Exception(" [*] Wrong network description.")
 
-        obj = objectives.channel(s_layer, target_unit1, batch=1) - objectives.channel(s_layer, target_unit2, batch=0)
+        obj = objectives.channel(s_layer, positive_unit, batch=1) - objectives.channel(s_layer, negative_unit, batch=0)
         fig = render.render_vis(self.model, obj, param_f, show_inline=True)
 
         return fig
 
-    def s_invert(self, selected_layer, target_unit):
-        neuron1 = ('vgg_features_%d'%(selected_layer), target_unit)
+    def single_invert(self, selected_layer, target_unit):
+        if self.network == 'vgg':
+            neuron1 = ('vgg_features_%d'%(selected_layer), target_unit)
+
+        elif self.network == 'resnet':
+            neuron1 = ('layer%d' % (selected_layer), target_unit)
+
+        elif self.network == 'dense':
+            neuron1 = ('vgg_features_%d' % (selected_layer), target_unit)
+
+        elif self.network == 'wide':
+            neuron1 = ('vgg_features_%d' % (selected_layer), target_unit)
+
+        else:
+            raise Exception(" [*] Wrong network description.")
 
         param_f = lambda: param.image(224, batch=1)
-
         C = lambda neuron1: objectives.channel(*neuron1, batch=0)
 
         fig = render.render_vis(self.model, C(neuron1), param_f, show_inline=True)
 
         return fig
 
-    def c_invert(self, selected_layer1, selected_layer2, target_unit1, target_unit2):
-        neuron1 = ('vgg_features_%d' % (selected_layer1), target_unit1)
-        neuron2 = ('vgg_features_%d' % (selected_layer2), target_unit2)
+    def combine_invert(self, selected_layer1, selected_layer2, target_unit1, target_unit2):
+        if self.network == 'vgg':
+            neuron1 = ('vgg_features_%d' % (selected_layer1), target_unit1)
+            neuron2 = ('vgg_features_%d' % (selected_layer2), target_unit2)
+
+        elif self.network == 'resnet':
+            neuron1 = ('layer%d' % (selected_layer1), target_unit1)
+            neuron2 = ('layer%d' % (selected_layer2), target_unit2)
+
+        elif self.network == 'dense':
+            neuron1 = ('layer%d' % (selected_layer1), target_unit1)
+            neuron2 = ('layer%d' % (selected_layer2), target_unit2)
+
+        elif self.network == 'wide':
+            neuron1 = ('layer%d' % (selected_layer1), target_unit1)
+            neuron2 = ('layer%d' % (selected_layer2), target_unit2)
+
+        else:
+            raise Exception(" [*] Wrong network description.")
 
         param_f = lambda: param.image(224, batch=3)
 
