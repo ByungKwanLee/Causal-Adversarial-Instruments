@@ -50,7 +50,7 @@ parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
-parser.add_argument('--eps', default=0.03, type=float)
+parser.add_argument('--eps', default=0.0078, type=float)
 parser.add_argument('--steps', default=10, type=int)
 args = parser.parse_args()
 
@@ -59,9 +59,6 @@ ngpus_per_node = len(args.gpu.split(','))
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-
-# Printing configurations
-print_configuration(args)
 
 # global best_acc
 best_acc = 0
@@ -182,13 +179,18 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
+
+    if gpu == int(args.gpu.split(',')[0]):
+        # Printing configurations
+        print_configuration(args)
+        print('==> Making model..')
+
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
     torch.cuda.set_device(gpu)
 
-    print('==> Making model..')
     # init model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
@@ -203,11 +205,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
 
     # Load Plain Network
-    # print('==> Loading Plain checkpoint..')
-    # assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-    # checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-    # print('Loaded checkpoint : checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-    # net.load_state_dict(checkpoint['net'])
+    print('==> Loading Plain checkpoint..')
+    assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
+    checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+    net.load_state_dict(checkpoint['net'])
 
     # Attack loader
     if args.dataset == 'imagenet':
