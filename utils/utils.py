@@ -1,11 +1,19 @@
 import os
 import torch
 import torchvision
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from skimage.transform import resize
 from PIL import Image, ImageDraw, ImageFont
+
+def set_random(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    torch.random.manual_seed(seed)
+    random.seed(seed)
 
 def check_dir(dir_path):
     if not os.path.exists(dir_path):

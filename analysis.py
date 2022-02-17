@@ -3,7 +3,6 @@ import os
 import argparse
 import torch
 import torch.nn as nn
-import random
 
 from tqdm import tqdm
 from utils.fast_network_utils import get_network
@@ -36,7 +35,7 @@ parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
 
 # visualization parameter
-parser.add_argument('--vis_atk', default='false', type=str2bool)
+parser.add_argument('--f_type', default='pn', type=str, help='option: pn / s / c')
 
 args = parser.parse_args()
 
@@ -127,19 +126,12 @@ def test():
     print('---------------------------------------\n')
 
 def visualizaition():
-    v_seed = 777
-    torch.manual_seed(v_seed)
-    torch.cuda.manual_seed(v_seed)
-    np.random.seed(v_seed)
-    torch.random.manual_seed(v_seed)
-    random.seed(v_seed)
-
     net.eval()
 
-    if args.vis_atk:
-        save_dir = './results/%s_vis_'%(str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+    if args.attack == 'plain':
+        save_dir = './results/fv/clean_vis_' + str(args.dataset) + '_' + str(args.network)
     else:
-        save_dir = './results/clean_vis_' + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+        save_dir = './results/fv/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
@@ -148,7 +140,7 @@ def visualizaition():
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
 
-        if args.vis_atk:
+        if args.attack != 'plain':
             inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
         int_latent = net(inputs, pop=True)
@@ -161,7 +153,32 @@ def visualizaition():
         save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
         print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
+def net_visualize():
+    net.eval()
+
+    if args.attack:
+        save_dir = './results/nv/%s_clean_vis_' % (str(args.f_type)) + str(args.dataset) + '_' + str(args.network)
+
+    else:
+        save_dir = './results/nv/%s_%s_vis_' % (str(args.f_type), str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+
+    check_dir(save_dir)
+
+    inv = NetInversion(net, network=args.network)
+
+    if args.f_type == 'pn':
+        inv.pn_invert()
+    elif args.f_type == 's':
+        inv.s_invert()
+    elif args.f_type == 'c':
+        inv.c_invert()
+
+    save_img = net_vis(inputs, inv, label, dataset=args.dataset)
+    save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
+    print("\n [*] Inversion Img%d is saved" % (batch_idx))
+
 if __name__ == '__main__':
+    set_random(777)
     visualizaition()
 
 

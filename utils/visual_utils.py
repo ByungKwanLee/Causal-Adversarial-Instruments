@@ -88,3 +88,55 @@ class SpInversion(object):
             optimizer.step()
 
         return tensor_to_img_array(image_f())
+
+class NetInversion(object):
+    def __init__(self, model, network):
+        super(NetInversion, self).__init__()
+        self.model = model
+        self.network = network
+
+    def pn_invert(self, selected_layer, target_unit1, target_unit2):
+        param_f = lambda: param.image(224, batch=2)
+        if self.network == 'vgg':
+            s_layer = 'vgg_features_%d'%(selected_layer)
+
+        elif self.network == 'resnet':
+            s_layer = 'vgg_features_%d' % (selected_layer)
+
+        elif self.network == 'dense':
+            s_layer = 'vgg_features_%d' % (selected_layer)
+
+        elif self.network == 'wide':
+            s_layer = 'vgg_features_%d' % (selected_layer)
+
+        else:
+            raise Exception(" [*] Wrong network description.")
+
+        obj = objectives.channel(s_layer, target_unit1, batch=1) - objectives.channel(s_layer, target_unit2, batch=0)
+        fig = render.render_vis(self.model, obj, param_f, show_inline=True)
+
+        return fig
+
+    def s_invert(self, selected_layer, target_unit):
+        neuron1 = ('vgg_features_%d'%(selected_layer), target_unit)
+
+        param_f = lambda: param.image(224, batch=1)
+
+        C = lambda neuron1: objectives.channel(*neuron1, batch=0)
+
+        fig = render.render_vis(self.model, C(neuron1), param_f, show_inline=True)
+
+        return fig
+
+    def c_invert(self, selected_layer1, selected_layer2, target_unit1, target_unit2):
+        neuron1 = ('vgg_features_%d' % (selected_layer1), target_unit1)
+        neuron2 = ('vgg_features_%d' % (selected_layer2), target_unit2)
+
+        param_f = lambda: param.image(224, batch=3)
+
+        C = lambda neuron1, neuron2: objectives.channel(*neuron1, batch=0) + objectives.channel(*neuron2, batch=1) + \
+                                     objectives.channel(*neuron1, batch=2) + objectives.channel(*neuron2, batch=2)
+
+        fig = render.render_vis(self.model, C(neuron1, neuron2), param_f, show_inline=True)
+
+        return fig
