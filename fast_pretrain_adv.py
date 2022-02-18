@@ -34,13 +34,13 @@ torch.autograd.profiler.profile(False)
 # fetch args
 parser = argparse.ArgumentParser()
 
-
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 
 parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--pretrained', default=False, type=str2bool)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
@@ -196,7 +196,8 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     net = get_network(network=args.network,
                       depth=args.depth,
                       dataset=args.dataset,
-                      gpu=gpu)
+                      gpu=gpu,
+                      pretrained=args.pretrained)
     net = net.to(memory_format=torch.channels_last).to(gpu)
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
 

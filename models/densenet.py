@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,6 +5,7 @@ import torch.utils.checkpoint as cp
 from collections import OrderedDict
 from torch import Tensor
 from torch.jit.annotations import List
+from torch.hub import load_state_dict_from_url
 
 
 class _DenseLayer(nn.Module):
@@ -189,6 +189,15 @@ class DenseNet(nn.Module):
         out = self.classifier(out)
         return out
 
+def densenet(depth, dataset, mean, std, pretrained=False):
+    model = DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
+    if (dataset == 'imagenet') and pretrained:
+        state_dict = load_state_dict_from_url("https://download.pytorch.org/models/densenet121-a639ec97.pth")
+        model.load_state_dict(state_dict)
+    return model
 
+<<<<<<< HEAD
 def densenet(depth, dataset, mean, std):
     return DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
+=======
+>>>>>>> e673ff190a03764d9b9b01dd6671534ce19e9445

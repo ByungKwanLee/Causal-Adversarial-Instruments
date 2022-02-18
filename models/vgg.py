@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Union, List, Dict, Any, cast
+from torch.hub import load_state_dict_from_url
 
 class VGG(nn.Module):
 
@@ -19,18 +20,6 @@ class VGG(nn.Module):
         self.std = std.view(1, -1, 1, 1)
 
         self.features = features
-
-        # Previous Version
-        # self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
-        # self.classifier = nn.Sequential(
-        #     nn.Linear(512 * 7 * 7, 4096),
-        #     nn.ReLU(True),
-        #     nn.Dropout(),
-        #     nn.Linear(4096, 4096),
-        #     nn.ReLU(True),
-        #     nn.Dropout(),
-        #     nn.Linear(4096, num_classes),
-        # )
 
         # New version by LBK
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
@@ -97,7 +86,7 @@ cfgs: Dict[int, List[Union[str, int]]] = {
 }
 
 
-def vgg(depth, dataset, mean, std):
+def vgg(depth, dataset, mean, std, pretrained=False):
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
     elif dataset == 'cifar100':
@@ -106,6 +95,12 @@ def vgg(depth, dataset, mean, std):
         num_classes = 200
     elif dataset == 'imagenet':
         num_classes = 1000
+
     model = VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)
+
+    if (dataset == 'imagenet') and pretrained:
+        state_dict = load_state_dict_from_url("https://download.pytorch.org/models/vgg16_bn-6c64b313.pth")
+        model.load_state_dict(state_dict, strict=False)
+
     return model
 

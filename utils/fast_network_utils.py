@@ -5,7 +5,7 @@ from models.wide import wide_resnet
 from models.densenet import densenet
 
 
-def get_network(network, depth, dataset, gpu):
+def get_network(network, depth, dataset, gpu, pretrained=False):
 
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465]).to(gpu)
@@ -24,12 +24,12 @@ def get_network(network, depth, dataset, gpu):
         std = torch.tensor([0.229, 0.224, 0.225]).to(gpu)
 
     if network == 'vgg':
-        return vgg(depth=depth, dataset=dataset, mean=mean, std=std)
+        return vgg(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
     elif network == 'resnet':
-        return resnet(depth=depth, dataset=dataset, mean=mean, std=std)
+        return resnet(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
     elif network == 'wide':
         return wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
     elif network == 'dense':
-        return densenet(depth=depth, dataset=dataset, mean=mean, std=std)
+        return densenet(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
     else:
         raise NotImplementedError
