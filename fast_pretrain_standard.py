@@ -168,8 +168,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     net = get_network(network=args.network,
                       depth=args.depth,
                       dataset=args.dataset,
-                      gpu=gpu,
-                      pretrained=args.pretrained)
+                      gpu=gpu)
     net = net.to(memory_format=torch.channels_last).to(gpu)
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
 
