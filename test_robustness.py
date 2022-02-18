@@ -35,9 +35,6 @@ parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
 
-# visualization parameter
-parser.add_argument('--vis_attack', default='true', type=str2bool)
-
 # Printing configurations
 print_configuration(args)
 

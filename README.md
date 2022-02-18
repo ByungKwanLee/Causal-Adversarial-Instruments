@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ByungKwanLee/Super-Fast-Adversarial-Training/blob/master/LICENSE)
 ---
 
-This is a PyTorch Implementation code for developing super fast adversarial training.
+This is a PyTorch Implementation code for developing causal adversarial instruments.
 This code is combined with below state-of-the-art technologies for
 accelerating adversarial attacks and defenses with Deep Neural Networks
 on Volta GPU architecture.
