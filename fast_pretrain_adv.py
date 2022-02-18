@@ -40,12 +40,12 @@ parser.add_argument('--network', default='resnet', type=str)
 
 parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool)
+parser.add_argument('--pretrained', default=True, type=str2bool)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=512, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
@@ -209,11 +209,12 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
 
-    # Load Plain Network
-    # print('==> Loading Plain checkpoint..')
-    # assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-    # checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-    # net.load_state_dict(checkpoint['net'])
+    if not args.pretrained:
+        # Load Plain Network
+        print('==> Loading Plain checkpoint..')
+        assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+        net.load_state_dict(checkpoint['net'])
 
     # Attack loader
     if args.dataset == 'imagenet':
