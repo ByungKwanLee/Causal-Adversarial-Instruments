@@ -43,7 +43,7 @@ parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--pretrained', default=True, type=str2bool)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.5, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=512, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -90,7 +90,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
     resize = torchvision.transforms.Resize((res, res))
 
     # lr_scheduler(optimizer, epoch)
-    desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+    desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_last_lr(), 0, 0, correct, total))
 
 
@@ -116,12 +116,13 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         scaler.update()
         lr_scheduler.step()
 
+
         train_loss += loss.item()
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+        desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (lr_scheduler.get_last_lr(), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -133,7 +134,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+    desc = ('[Test/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (lr_scheduler.get_last_lr(), test_loss/(0+1), 0, correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
@@ -151,7 +152,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        desc = ('[Test/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)'
                 % (lr_scheduler.get_last_lr(), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -231,9 +232,14 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     #                int(args.epoch * 0.5): args.learning_rate * 0.1,
     #                int(args.epoch * 0.75): args.learning_rate * 0.01}
     # lr_scheduler = PresetLRScheduler(lr_schedule)
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                     step_size_up=args.epoch * len(trainloader) / 2,
-                                                     step_size_down=args.epoch * len(trainloader) / 2)
+    # lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+    #                                                  step_size_up=args.epoch * len(trainloader) / 2,
+    #                                                  step_size_down=args.epoch * len(trainloader) / 2)
+    # Cyclic LR with single triangle
+    schedule = np.interp(np.arange((args.epoch + 1) * len(trainloader)),
+                            [0, 5 * len(trainloader), args.epoch * len(trainloader)],
+                            [0, 1, 0])
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule.__getitem__)
     scaler = GradScaler()
 
     # init criterion
