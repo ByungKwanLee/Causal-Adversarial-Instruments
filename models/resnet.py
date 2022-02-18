@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 from typing import Type, Any, Callable, Union, List, Optional
+from torch.hub import load_state_dict_from_url
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
@@ -248,7 +249,7 @@ class ResNet(nn.Module):
 
 
 
-def resnet(depth=18, dataset='cifar10', mean=None, std=None):
+def resnet(depth=18, dataset='cifar10', mean=None, std=None, pretrained=False):
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
     elif dataset == 'cifar100':
@@ -264,15 +265,25 @@ def resnet(depth=18, dataset='cifar10', mean=None, std=None):
     if depth == 18:
         block = BasicBlock
         layers = [2, 2, 2, 2]
+        url = "https://download.pytorch.org/models/resnet18-f37072fd.pth"
     elif depth == 34:
         block = BasicBlock
         layers = [3, 4, 6, 3]
+        url = "https://download.pytorch.org/models/resnet34-b627a593.pth"
     elif depth == 50:
         block = Bottleneck
         layers = [3, 4, 6, 3]
+        url = "https://download.pytorch.org/models/resnet50-0676ba61.pth"
     else:
         raise NotImplementedError
 
-    return ResNet(block=block, layers=layers, num_classes=num_classes,
-                  mean=mean, std=std)
+
+    model = ResNet(block=block, layers=layers, num_classes=num_classes, mean=mean, std=std)
+
+    if (dataset == 'imagenet') and pretrained:
+        state_dict = load_state_dict_from_url(url)
+        model.load_state_dict(state_dict)
+
+
+    return model
 

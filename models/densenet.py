@@ -6,6 +6,7 @@ import torch.utils.checkpoint as cp
 from collections import OrderedDict
 from torch import Tensor
 from torch.jit.annotations import List
+from torch.hub import load_state_dict_from_url
 
 
 class _DenseLayer(nn.Module):
@@ -190,6 +191,11 @@ class DenseNet(nn.Module):
         return out
 
 
-def densenet(depth, dataset, mean, std):
+def densenet(depth, dataset, mean, std, pretrained=False):
+    model = DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
 
-    return DenseNet(32, (6, 12, 24, 16), 64, mean, std)
+    if (dataset == 'imagenet') and pretrained:
+        state_dict = load_state_dict_from_url("https://download.pytorch.org/models/densenet121-a639ec97.pth")
+        model.load_state_dict(state_dict)
+
+    return model

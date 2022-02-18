@@ -34,7 +34,6 @@ torch.autograd.profiler.profile(False)
 # fetch args
 parser = argparse.ArgumentParser()
 
-
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='resnet', type=str)
