@@ -37,6 +37,7 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='resnet', type=str)
+
 parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 
