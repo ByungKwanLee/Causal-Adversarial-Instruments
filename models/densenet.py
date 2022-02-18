@@ -112,6 +112,7 @@ class DenseNet3(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
+
     def forward(self, x):
         x = (x - self.mean) / self.std
         out = self.conv1(x)
@@ -122,8 +123,6 @@ class DenseNet3(nn.Module):
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.in_planes)
         return self.fc(out)
-
-
 
 def densenet(depth, dataset, mean, std):
 
@@ -136,7 +135,11 @@ def densenet(depth, dataset, mean, std):
     elif dataset == 'tiny':
         num_classes = 200
         spatial_expansion = True
+    elif dataset == 'imagenet':
+        num_classes = 1000
+        spatial_expansion = True
+
     else:
         raise NotImplementedError
 
-    return DenseNet3(depth, num_classes, growth_rate=24, reduction=0.5, bottleneck=True, dropRate=0.0, mean=mean, std=std)
+    return DenseNet3(depth, num_classes, growth_rate=32, reduction=0.5, bottleneck=True, dropRate=0.0, mean=mean, std=std)
