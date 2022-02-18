@@ -97,7 +97,10 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.to(gpu), targets.to(gpu)
-        inputs = resize(inputs)
+        if args.dataset == 'imagenet':
+            inputs = resize(inputs)
+        else:
+            pass
         inputs = attack(inputs, targets)
         optimizer.zero_grad()
 

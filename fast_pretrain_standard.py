@@ -64,7 +64,9 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, g
     correct = 0
     total = 0
 
+
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=65, start_ramp=76)
+
     lr_scheduler(optimizer, epoch)
     desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
@@ -73,7 +75,12 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, g
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.to(gpu), targets.to(gpu)
-        inputs = resize(inputs)
+
+        if args.dataset == 'imagenet':
+            inputs = resize(inputs)
+        else:
+            pass
+
         optimizer.zero_grad()
 
         # Accerlating forward propagation
