@@ -136,19 +136,24 @@ class DenseNet(nn.Module):
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
 
+        # First convolution
+
         if num_classes == 1000:
             k_size, sr_size, p_size = 7, 2, 3
+            self.features = nn.Sequential(OrderedDict([
+                ('conv0', nn.Conv2d(3, num_init_features, kernel_size=k_size, stride=sr_size,
+                                    padding=p_size, bias=False)),
+                ('norm0', nn.BatchNorm2d(num_init_features)),
+                ('relu0', nn.ReLU(inplace=True)),
+                ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+            ]))
+
         else:
             k_size, sr_size, p_size = 3, 1, 1
-
-        # First convolution
-        self.features = nn.Sequential(OrderedDict([
-            ('conv0', nn.Conv2d(3, num_init_features, kernel_size=k_size, stride=sr_size,
-                                padding=p_size, bias=False)),
-            ('norm0', nn.BatchNorm2d(num_init_features)),
-            ('relu0', nn.ReLU(inplace=True)),
-            ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-        ]))
+            self.features = nn.Sequential(OrderedDict([
+                ('conv0', nn.Conv2d(3, num_init_features, kernel_size=k_size, stride=sr_size,
+                                    padding=p_size, bias=False)),
+            ]))
 
         # Each denseblock
         num_features = num_init_features

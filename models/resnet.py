@@ -141,6 +141,7 @@ class ResNet(nn.Module):
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
+        self.num_classes = num_classes
 
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
@@ -156,7 +157,7 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        if num_classes == 1000:
+        if self.num_classes == 1000:
             k_size, sr_size, p_size = 7, 2, 3
 
         else:
@@ -233,7 +234,11 @@ class ResNet(nn.Module):
             x = self.conv1(x)
             x = self.bn1(x)
             x = self.relu(x)
-            x = self.maxpool(x)
+
+            if self.num_classes == 1000:
+                x = self.maxpool(x)
+            else:
+                pass
 
             x = self.layer1(x)
             x = self.layer2(x)
