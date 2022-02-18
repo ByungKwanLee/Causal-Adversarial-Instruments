@@ -195,9 +195,3 @@ def densenet(depth, dataset, mean, std, pretrained=False):
         state_dict = load_state_dict_from_url("https://download.pytorch.org/models/densenet121-a639ec97.pth")
         model.load_state_dict(state_dict)
     return model
-
-<<<<<<< HEAD
-def densenet(depth, dataset, mean, std):
-    return DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
-=======
->>>>>>> e673ff190a03764d9b9b01dd6671534ce19e9445
