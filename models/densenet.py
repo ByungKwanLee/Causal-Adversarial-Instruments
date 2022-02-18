@@ -191,4 +191,4 @@ class DenseNet(nn.Module):
 
 
 def densenet(depth, dataset, mean, std):
-    return DenseNet(32, (6, 12, 24, 16), 64, mean, std)
+    return DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
