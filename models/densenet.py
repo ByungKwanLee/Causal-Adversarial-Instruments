@@ -136,10 +136,15 @@ class DenseNet(nn.Module):
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
 
+        if num_classes == 1000:
+            k_size, sr_size, p_size = 7, 2, 3
+        else:
+            k_size, sr_size, p_size = 3, 1, 1
+
         # First convolution
         self.features = nn.Sequential(OrderedDict([
-            ('conv0', nn.Conv2d(3, num_init_features, kernel_size=7, stride=2,
-                                padding=3, bias=False)),
+            ('conv0', nn.Conv2d(3, num_init_features, kernel_size=k_size, stride=sr_size,
+                                padding=p_size, bias=False)),
             ('norm0', nn.BatchNorm2d(num_init_features)),
             ('relu0', nn.ReLU(inplace=True)),
             ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
@@ -190,7 +195,12 @@ class DenseNet(nn.Module):
         return out
 
 def densenet(depth, dataset, mean, std, pretrained=False):
-    model = DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
+    if dataset =='imagenet':
+        g_rate = 32
+    else:
+        g_rate = 12
+
+    model = DenseNet(g_rate, (6, 12, 24, 16), 64, mean=mean, std=std)
     if (dataset == 'imagenet') and pretrained:
         print("ImageNet Pretrained Model Loaded")
         state_dict = load_state_dict_from_url("https://download.pytorch.org/models/densenet121-a639ec97.pth")
