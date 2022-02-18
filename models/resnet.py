@@ -246,7 +246,6 @@ class ResNet(nn.Module):
     def forward(self, x: Tensor, int: bool=False, pop: bool=False) -> Tensor:
         return self._forward_impl(x, int, pop)
 
-
 def resnet(depth=18, dataset='cifar10', mean=None, std=None, pretrained=False):
 
     if dataset == 'cifar10' or dataset == 'svhn':

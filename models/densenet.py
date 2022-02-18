@@ -191,10 +191,8 @@ class DenseNet(nn.Module):
 
 def densenet(depth, dataset, mean, std, pretrained=False):
     model = DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
-
     if (dataset == 'imagenet') and pretrained:
         state_dict = load_state_dict_from_url("https://download.pytorch.org/models/densenet121-a639ec97.pth")
         model.load_state_dict(state_dict)
-
     return model
 
