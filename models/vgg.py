@@ -99,6 +99,7 @@ def vgg(depth, dataset, mean, std, pretrained=False):
     model = VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)
 
     if (dataset == 'imagenet') and pretrained:
+        print("ImageNet Pretrained Model Loaded")
         state_dict = load_state_dict_from_url("https://download.pytorch.org/models/vgg16_bn-6c64b313.pth")
         model.load_state_dict(state_dict, strict=False)
 

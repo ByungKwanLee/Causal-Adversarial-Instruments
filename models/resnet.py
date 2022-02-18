@@ -285,6 +285,7 @@ def resnet(depth=18, dataset='cifar10', mean=None, std=None, pretrained=False):
     model = ResNet(block=block, layers=layers, num_classes=num_classes, mean=mean, std=std)
 
     if (dataset == 'imagenet') and pretrained:
+        print("ImageNet Pretrained Model Loaded")
         state_dict = load_state_dict_from_url(url)
         model.load_state_dict(state_dict)
 
