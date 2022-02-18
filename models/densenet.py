@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -190,8 +189,6 @@ class DenseNet(nn.Module):
         out = self.classifier(out)
         return out
 
-
-<<<<<<< HEAD
 def densenet(depth, dataset, mean, std, pretrained=False):
     model = DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
 
@@ -200,7 +197,4 @@ def densenet(depth, dataset, mean, std, pretrained=False):
         model.load_state_dict(state_dict)
 
     return model
-=======
-def densenet(depth, dataset, mean, std):
-    return DenseNet(32, (6, 12, 24, 16), 64, mean=mean, std=std)
->>>>>>> 8ae0cf5f3b100e55a9cc0c971a819338142913cb
+
