@@ -37,12 +37,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 
 parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--pretrained', default=True, type=str2bool)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--pretrained', default=False, type=str2bool)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.5, type=float)
@@ -53,7 +53,7 @@ parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
-parser.add_argument('--eps', default=0.0078, type=float)
+parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 args = parser.parse_args()
 
@@ -113,16 +113,16 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
-        lr_scheduler.step()
-
 
         train_loss += loss.item()
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+                (lr_scheduler.get_lr(optimizer), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        # desc = ('[Train] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+        #         (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
 
@@ -151,8 +151,10 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (lr_scheduler.get_lr(optimizer), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        # desc = ('[Test] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        #         % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save checkpoint.
@@ -229,10 +231,15 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
 
     # Cyclic LR with single triangle
-    schedule = np.interp(np.arange((args.epoch + 1) * len(trainloader)),
-                            [0, 5 * len(trainloader), args.epoch * len(trainloader)],
-                            [0, 1, 0])
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule.__getitem__)
+    lr_schedule = {0: args.learning_rate,
+                   int(args.epoch * 0.5): args.learning_rate * 0.1,
+                   int(args.epoch * 0.75): args.learning_rate * 0.01}
+    lr_scheduler = PresetLRScheduler(lr_schedule)
+
+    # schedule = np.interp(np.arange((args.epoch + 1) * len(trainloader)),
+    #                         [0, 5 * len(trainloader), args.epoch * len(trainloader)],
+    #                         [0, 1, 0])
+    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule.__getitem__)
     scaler = GradScaler()
 
     # init criterion
@@ -241,6 +248,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     for epoch in range(args.epoch):
         train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu)
         test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu)
+        lr_scheduler.step()
 
     dist.destroy_process_group()
 
