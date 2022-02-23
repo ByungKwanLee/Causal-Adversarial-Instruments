@@ -103,7 +103,6 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         inputs = attack(inputs, targets)
         optimizer.zero_grad()
 
-
         # Accerlating forward propagation
         with autocast():
             outputs = net(inputs)
@@ -120,7 +119,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         correct += predicted.eq(targets).sum().item()
 
         desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (lr_scheduler.get_lr(optimizer), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+                (lr_scheduler.get_lr(), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         # desc = ('[Train] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
         #         (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
@@ -152,7 +151,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
         correct += predicted.eq(targets).sum().item()
 
         desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (lr_scheduler.get_lr(optimizer), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+                % (lr_scheduler.get_lr(), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         # desc = ('[Test] Loss: %.3f | Acc: %.3f%% (%d/%d)'
         #         % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
@@ -174,7 +173,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
             os.mkdir('checkpoint')
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
-
+ 
         if gpu == int(args.gpu.split(',')[0]):
             torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                          args.network,
@@ -185,8 +184,6 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
             best_acc = acc
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-
-
     if gpu == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
@@ -229,13 +226,13 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
+    # lr_schedule = {0: args.learning_rate,
+    #                int(args.epoch * 0.5): args.learning_rate * 0.1,
+    #                int(args.epoch * 0.75): args.learning_rate * 0.01}
+    # lr_scheduler = PresetLRScheduler(lr_schedule)
     # Cyclic LR with single triangle
-    lr_schedule = {0: args.learning_rate,
-                   int(args.epoch * 0.5): args.learning_rate * 0.1,
-                   int(args.epoch * 0.75): args.learning_rate * 0.01}
-    lr_scheduler = PresetLRScheduler(lr_schedule)
-
     # schedule = np.interp(np.arange((args.epoch + 1) * len(trainloader)),
     #                         [0, 5 * len(trainloader), args.epoch * len(trainloader)],
     #                         [0, 1, 0])
