@@ -44,7 +44,8 @@ class FastFGSMTrain(Attack):
         # Update adversarial images
         grad = torch.autograd.grad(scaled_loss, adv_images,
                                    retain_graph=False, create_graph=False)[0]
-        grad /= scaled_loss / cost
+        # To efficient computation
+        # grad /= scaled_loss / cost
 
         adv_images_ = adv_images.detach() + 1.25 * self.eps*grad.sign()
         delta = torch.clamp(adv_images_ - images, min=-self.eps, max=self.eps)
