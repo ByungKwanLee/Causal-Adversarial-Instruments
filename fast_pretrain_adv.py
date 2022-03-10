@@ -173,7 +173,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
             os.mkdir('checkpoint')
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
- 
+
         if gpu == int(args.gpu.split(',')[0]):
             torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                          args.network,
