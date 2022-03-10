@@ -63,7 +63,8 @@ class FastPGD(Attack):
             scaled_loss = self.scaler.scale(cost)
             grad = torch.autograd.grad(scaled_loss, adv_images,
                                        retain_graph=False, create_graph=False)[0]
-            grad /= scaled_loss / cost
+            # To efficient computation
+            # grad /= scaled_loss / cost
 
             adv_images = adv_images.detach() + self.alpha*grad.sign()
             delta = torch.clamp(adv_images - images, min=-self.eps, max=self.eps)

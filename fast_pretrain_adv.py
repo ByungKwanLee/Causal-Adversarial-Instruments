@@ -1,6 +1,3 @@
-# Future import build
-from __future__ import print_function
-
 # Import built-in module
 import os
 import argparse
@@ -38,17 +35,17 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--network', default='vgg', type=str)
 
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=512, type=float)
-parser.add_argument('--test_batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=256, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter
@@ -65,6 +62,18 @@ os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
 # global best_acc
 best_acc = 0
+
+# LR Scheduler
+lr_schedule = {0: args.learning_rate,
+               int(args.epoch * 0.5): args.learning_rate * 0.1,
+               int(args.epoch * 0.75): args.learning_rate * 0.01}
+lr_scheduler = PresetLRScheduler(lr_schedule)
+
+# init criterion
+criterion = nn.CrossEntropyLoss()
+
+# Mix Training
+scaler = GradScaler()
 
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
@@ -90,9 +99,9 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=65, start_ramp=76)
 
-    # lr_scheduler(optimizer, epoch)
-    desc = ('[Train] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (0, 0, correct, total))
+    lr_scheduler(optimizer, epoch)
+    desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+            (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
 
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
@@ -119,21 +128,47 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         correct += predicted.eq(targets).sum().item()
 
         desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (lr_scheduler.get_lr(), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
-        # desc = ('[Train] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-        #         (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+                (lr_scheduler.get_lr(optimizer), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
 
 
-def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu):
+def test(epoch, net, testloader, criterion, attack, gpu):
     global best_acc
     net.eval()
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss/(0+1), 0, correct, total))
+
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
+    for batch_idx, (inputs, targets) in prog_bar:
+        inputs, targets = inputs.to(gpu), targets.to(gpu)
+
+        # Accerlating forward propagation
+        with autocast():
+            outputs = net(inputs)
+            loss = criterion(outputs, targets)
+
+        test_loss += loss.item()
+        _, predicted = outputs.max(1)
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
+
+        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        prog_bar.set_description(desc, refresh=True)
+
+    # Save clean acc.
+    clean_acc = 100. * correct / total
+
+    test_loss = 0
+    correct = 0
+    total = 0
+
+    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            % (test_loss / (0 + 1), 0, correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -150,14 +185,20 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (lr_scheduler.get_lr(), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
-        # desc = ('[Test] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-        #         % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-    # Save checkpoint.
-    acc = 100.*correct/total
+
+    # Save adv acc.
+    adv_acc = 100. * correct / total
+
+
+    # compute acc
+    acc = (clean_acc + adv_acc)/2
+
+    if gpu == int(args.gpu.split(',')[0]):
+        print('Averaged Accuracy is {:.2f}!!'.format(acc))
 
 
     if acc > best_acc:
@@ -226,26 +267,11 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
-    # lr_schedule = {0: args.learning_rate,
-    #                int(args.epoch * 0.5): args.learning_rate * 0.1,
-    #                int(args.epoch * 0.75): args.learning_rate * 0.01}
-    # lr_scheduler = PresetLRScheduler(lr_schedule)
-    # Cyclic LR with single triangle
-    # schedule = np.interp(np.arange((args.epoch + 1) * len(trainloader)),
-    #                         [0, 5 * len(trainloader), args.epoch * len(trainloader)],
-    #                         [0, 1, 0])
-    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule.__getitem__)
-    scaler = GradScaler()
-
-    # init criterion
-    criterion = nn.CrossEntropyLoss()
 
     for epoch in range(args.epoch):
         train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu)
-        test(epoch, net, testloader, optimizer, criterion, lr_scheduler, attack, gpu)
-        lr_scheduler.step()
+        test(epoch, net, testloader, criterion, attack, gpu)
 
     dist.destroy_process_group()
 
