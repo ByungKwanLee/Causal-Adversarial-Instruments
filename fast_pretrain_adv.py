@@ -109,6 +109,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         inputs, targets = inputs.to(gpu), targets.to(gpu)
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
+
         inputs = attack(inputs, targets)
         optimizer.zero_grad()
 
