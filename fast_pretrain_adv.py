@@ -75,21 +75,6 @@ criterion = nn.CrossEntropyLoss()
 # Mix Training
 scaler = GradScaler()
 
-
-def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
-    assert min_res <= max_res
-
-    if epoch <= start_ramp:
-        return min_res
-
-    if epoch >= end_ramp:
-        return max_res
-
-    # otherwise, linearly interpolate to the nearest multiple of 32
-    interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
-    final_res = int(np.round(interp[0] / 32)) * 32
-    return final_res
-
 def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu):
     print('\nEpoch: %d' % epoch)
     net.train()
@@ -97,7 +82,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
     correct = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=65, start_ramp=76)
+    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
 
     lr_scheduler(optimizer, epoch)
     desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
