@@ -89,7 +89,6 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, g
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.to(gpu), targets.to(gpu)
-
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
 
