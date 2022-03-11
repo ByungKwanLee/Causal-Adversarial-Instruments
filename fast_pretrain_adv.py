@@ -39,7 +39,7 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool)
+parser.add_argument('--pretrained', default=True, type=str2bool) # True for loading ImageNet pre-trained model
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
