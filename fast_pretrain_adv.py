@@ -45,7 +45,7 @@ parser.add_argument('--pretrained', default=True, type=str2bool) # True for load
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter
