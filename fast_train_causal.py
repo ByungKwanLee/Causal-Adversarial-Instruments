@@ -75,58 +75,92 @@ criterion = nn.CrossEntropyLoss()
 # Mix Training
 scaler = GradScaler()
 
-def causal_train(epoch, net, cnet, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu):
+def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, criterion, lr_scheduler, scaler, attack, gpu):
     print('\nEpoch: %d' % epoch)
     net.eval()
     cnet.train()
+    znet.train()
     train_loss = 0
     correct = 0
     total = 0
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
 
-    lr_scheduler(optimizer, epoch)
-    desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
+    c_scheduler = lr_scheduler(c_optimizer, epoch)
+    z_scheduler = lr_scheduler(z_optimizer, epoch)
+    desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+            (c_scheduler.get_lr(c_optimizer), z_scheduler.get_lr(z_optimizer), 0, 0, correct, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.to(gpu), targets.to(gpu)
+
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
 
-        inputs = attack(inputs, targets)
-        optimizer.zero_grad()
+        adv_inputs = attack(inputs, targets)
+        c_optimizer.zero_grad()
 
         # Accerlating forward propagation
         with autocast():
-            c_input = net(inputs, pop=True)
+            adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
+            inst_v = adv_feature - cln_feature
 
+            adv_output = net(adv_feature, int=True)
+            pseudo_label = get_pseudo(adv_output)
 
+            causal_feature = cnet(adv_feature)
+            causal_output = net(causal_feature, int=True)
 
-            outputs = cnet(c_input, nc)
-            loss = criterion(outputs, targets)
+            inst_feature = znet(inst_v)
+            inst_output = net(inst_feature, int=True)
+
+            causal_loss = ((pseudo_label - causal_output) * inst_output).mean()
 
         # Accerlating backward propagation
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
+        scaler.scale(causal_loss).backward()
+        scaler.step(c_optimizer)
         scaler.update()
+
+        z_optimizer.zero_grad()
+
+        with autocast():
+            causal_feature = cnet(adv_feature)
+            causal_output = net(causal_feature, int=True)
+
+            inst_loss = -1. * (((pseudo_label - causal_output) * inst_output).mean())
+
+        # Accerlating backward propagation
+        scaler.scale(inst_loss).backward()
+        scaler.step(z_optimizer)
+        scaler.update()
+
+
+
+
+
+
+
+
+
 
         train_loss += loss.item()
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (lr_scheduler.get_lr(optimizer), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+                (c_scheduler.get_lr(c_optimizer), z_scheduler.get_lr(z_optimizer), train_loss / (batch_idx + 1),
+                 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-
-
-def causal_test(epoch, net, cnet, testloader, criterion, attack, gpu):
+def causal_test(epoch, net, cnet, znet, testloader, criterion, attack, gpu):
     global best_acc
     net.eval()
     cnet.eval()
+    znet.eval()
+
     test_loss = 0
     correct = 0
     total = 0
@@ -236,23 +270,25 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).to(gpu)
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
 
-    cnet = get_network(network='causal', depth=None,
-                      dataset=args.dataset,
-                      gpu=gpu, pretrained=None)
+    cnet = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
     cnet = cnet.to(memory_format=torch.channels_last).to(gpu)
     cnet = torch.nn.parallel.DistributedDataParallel(cnet, device_ids=[gpu])
+
+    znet = get_network(network='instrument', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
+    znet = znet.to(memory_format=torch.channels_last).to(gpu)
+    znet = torch.nn.parallel.DistributedDataParallel(znet, device_ids=[gpu])
 
     # fast init dataloader
     trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
 
-    if not args.pretrained:
-        # Load Plain Network
-        print('==> Loading Plain checkpoint..')
-        assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-        net.load_state_dict(checkpoint['net'])
+
+    #Load backbone network parameters
+    print('==> Loading Backbone checkpoint..')
+    assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
+    checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+    net.load_state_dict(checkpoint['net'])
 
     # Attack loader
     if args.dataset == 'imagenet':
@@ -263,12 +299,12 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
 
     # init optimizer and lr scheduler
-    optimizer = optim.SGD(cnet.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-
+    c_optimizer = optim.SGD(cnet.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    z_optimizer = optim.SGD(znet.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
 
     for epoch in range(args.epoch):
-        causal_train(epoch, net, cnet, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu)
-        causal_test(epoch, net, cnet, testloader, criterion, attack, gpu)
+        causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, criterion, lr_scheduler, scaler, attack, gpu)
+        causal_test(epoch, net, cnet, znet, testloader, criterion, attack, gpu)
 
     dist.destroy_process_group()
 

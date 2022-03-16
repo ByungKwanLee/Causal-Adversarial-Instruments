@@ -1,64 +1,67 @@
 import torch
 import torch.nn as nn
-#import torch.nn.functional as F
+import torch.nn.functional as F
 import torch.nn.init as init
 from torch.autograd import Variable
 
-def reparametrize(mu, logvar):
-    std = logvar.div(2).exp()
-    eps = Variable(std.data.new(std.size()).normal_())
-    return mu + std*eps
+class conv_bn_relu(nn.Module):
+    def __init__(self, in_ch, out_ch, k_size, padding_size):
+        super(conv_bn_relu, self).__init__()
 
-class View(nn.Module):
-    def __init__(self, size):
-        super(View, self).__init__()
-        self.size = size
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=k_size, padding=padding_size),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(0.2)
+        )
 
-    def forward(self, tensor):
-        return tensor.view(self.size)
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+class deconv_bn_relu(nn.Module):
+    def __init__(self, in_ch, out_ch, last=False):
+        super(deconv_bn_relu, self).__init__()
+        if last:
+            self.deconv = nn.Sequential(
+                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1),
+                nn.BatchNorm2d(out_ch),
+             )
+        else:
+            self.deconv = nn.Sequential(
+                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1),
+                nn.BatchNorm2d(out_ch),
+                nn.LeakyReLU(0.2)
+            )
+
+    def forward(self, x):
+        x = self.deconv(x)
+        return x
 
 class CausalAE(nn.Module):
-    """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
-
-    def __init__(self, dataset, z_dim=10, nc=3):
+    def __init__(self, dataset, z_dim=10, nc=512):
         super(CausalAE, self).__init__()
         self.z_dim = z_dim
         self.nc = nc
 
         if dataset == 'imagenet':
             c_list = []
+            k_list = []
         else:
-            c_list = []
+            k_list = 3
+            c_list = [512, 512, 1024, 1024, 512, 512]
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(nc, 32, 4, 2, 1),          # B,  32, 32, 32
-            nn.ReLU(True),
-            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
-            nn.ReLU(True),
-            nn.Conv2d(32, 64, 4, 2, 1),          # B,  64,  8,  8
-            nn.ReLU(True),
-            nn.Conv2d(64, 64, 4, 2, 1),          # B,  64,  4,  4
-            nn.ReLU(True),
-            nn.Conv2d(64, 256, 4, 1),            # B, 256,  1,  1
-            nn.ReLU(True),
-            View((-1, 256*1*1)),                 # B, 256
-            nn.Linear(256, z_dim*2),             # B, z_dim*2
+            conv_bn_relu(in_ch=nc, out_ch=c_list[0], k_size=k_list, padding_size=1),
+            conv_bn_relu(in_ch=c_list[0], out_ch=c_list[1], k_size=k_list, padding_size=1),
+            conv_bn_relu(in_ch=c_list[1], out_ch=c_list[2], k_size=k_list, padding_size=1),
         )
+        self.linear = nn.Sequential(nn.Linear(c_list[2], c_list[2]),
+                                    nn.LeakyReLU(0.2))
         self.decoder = nn.Sequential(
-            nn.Linear(z_dim, 256),               # B, 256
-            View((-1, 256, 1, 1)),               # B, 256,  1,  1
-            nn.ReLU(True),
-            nn.ConvTranspose2d(256, 64, 4),      # B,  64,  4,  4
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 64, 4, 2, 1), # B,  64,  8,  8
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1), # B,  32, 16, 16
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, nc, 4, 2, 1),  # B, nc, 64, 64
+            deconv_bn_relu(in_ch=c_list[2], out_ch=c_list[3]),
+            deconv_bn_relu(in_ch=c_list[3], out_ch=c_list[4]),
+            deconv_bn_relu(in_ch=c_list[4], out_ch=c_list[5], last=True),
         )
-
         self.weight_init()
 
     def weight_init(self):
@@ -67,19 +70,50 @@ class CausalAE(nn.Module):
                 kaiming_init(m)
 
     def forward(self, x):
-        distributions = self._encode(x)
-        mu = distributions[:, :self.z_dim]
-        logvar = distributions[:, self.z_dim:]
-        z = reparametrize(mu, logvar)
-        x_recon = self._decode(z)
+        x = self.encoder(x)
+        x = F.adaptive_avg_pool2d(x, [1, 1])
+        x = self.decoder(x)
 
-        return x_recon, mu, logvar
+        return x
 
-    def _encode(self, x):
-        return self.encoder(x)
+class CausalIV(nn.Module):
+    def __init__(self, dataset, z_dim=10, nc=512):
+        super(CausalIV, self).__init__()
+        self.z_dim = z_dim
+        self.nc = nc
 
-    def _decode(self, z):
-        return self.decoder(z)
+        if dataset == 'imagenet':
+            c_list = []
+            k_list = []
+        else:
+            k_list = 3
+            c_list = [512, 512, 1024, 1024, 512, 512]
+
+        self.encoder = nn.Sequential(
+            conv_bn_relu(in_ch=nc, out_ch=c_list[0], k_size=k_list, padding_size=1),
+            conv_bn_relu(in_ch=c_list[0], out_ch=c_list[1], k_size=k_list, padding_size=1),
+            conv_bn_relu(in_ch=c_list[1], out_ch=c_list[2], k_size=k_list, padding_size=1),
+        )
+        self.linear = nn.Sequential(nn.Linear(c_list[2], c_list[2]),
+                                    nn.LeakyReLU(0.2))
+        self.decoder = nn.Sequential(
+            deconv_bn_relu(in_ch=c_list[2], out_ch=c_list[3]),
+            deconv_bn_relu(in_ch=c_list[3], out_ch=c_list[4]),
+            deconv_bn_relu(in_ch=c_list[4], out_ch=c_list[5], last=True),
+        )
+        self.weight_init()
+
+    def weight_init(self):
+        for block in self._modules:
+            for m in self._modules[block]:
+                kaiming_init(m)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = F.adaptive_avg_pool2d(x, [1, 1])
+        x = self.decoder(x)
+
+        return x
 
 def kaiming_init(m):
     if isinstance(m, (nn.Linear, nn.Conv2d)):
@@ -91,18 +125,10 @@ def kaiming_init(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
-
-def normal_init(m, mean, std):
-    if isinstance(m, (nn.Linear, nn.Conv2d)):
-        m.weight.data.normal_(mean, std)
-        if m.bias.data is not None:
-            m.bias.data.zero_()
-    elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
-        m.weight.data.fill_(1)
-        if m.bias.data is not None:
-            m.bias.data.zero_()
-
-def cae(dataset, nc):
-    model = CausalAE(dataset, nc)
+def cae(dataset, iv=False):
+    if iv:
+        model = CausalIV(dataset)
+    else:
+        model = CausalAE(dataset)
 
     return model

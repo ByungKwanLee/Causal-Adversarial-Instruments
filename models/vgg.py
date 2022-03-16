@@ -30,6 +30,9 @@ class VGG(nn.Module):
 
     def forward(self, x: torch.Tensor, int: bool=False, pop: bool=False) -> torch.Tensor:
         if int:
+            for ind, f in enumerate(self.features[42:]):
+                x = f(x)
+
             x = self.avgpool(x)
             x = torch.flatten(x, 1)
             x = self.classifier(x)
@@ -37,10 +40,12 @@ class VGG(nn.Module):
 
         else:
             x = (x - self.mean) / self.std # normalize by LBK
-            x = self.features(x)
 
-            if pop:
-                return x
+            for ind, f in enumerate(self.features):
+                x = f(x)
+
+                if pop==True and ind==41:
+                    return x
 
             x = self.avgpool(x)
             x = torch.flatten(x, 1)

@@ -27,6 +27,10 @@ def Resize(size):
 
     return inner
 
+def get_pseudo(adv_output):
+
+    print("ok")
+
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]
     weight = np.zeros([depth, depth, out_c, out_c])
@@ -184,7 +188,6 @@ class StairCaseLRScheduler(object):
         for param_group in optimizer.param_groups:
             lr = param_group['lr']
             return lr
-
 
 class PresetLRScheduler(object):
     """Using a manually designed learning rate schedule rules.

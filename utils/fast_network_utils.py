@@ -33,6 +33,8 @@ def get_network(network, depth, dataset, gpu, pretrained=False):
     elif network == 'dense':
         return densenet(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
     elif network == 'causal':
-        return cae(dataset=dataset)
+        return cae(dataset=dataset, iv=False)
+    elif network == 'instrument':
+        return cae(dataset=dataset, iv=True)
     else:
         raise NotImplementedError
