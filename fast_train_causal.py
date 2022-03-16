@@ -12,6 +12,7 @@ import torch.optim as optim
 import torch.distributed as dist
 
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
 
 # Import Custom Utils
 from utils.fast_network_utils import get_network
@@ -24,7 +25,6 @@ from attack.fastattack import attack_loader
 
 # Accelerating forward and backward
 from torch.cuda.amp import GradScaler, autocast
-
 
 torch.backends.cudnn.benchmark = True
 torch.autograd.profiler.emit_nvtx(False)
@@ -52,6 +52,8 @@ parser.add_argument('--epoch', default=60, type=int)
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
+
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # multi-process
@@ -77,6 +79,11 @@ scaler = GradScaler()
 
 def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, scaler, attack, gpu):
     print('\nEpoch: %d' % epoch)
+
+    log_dir = args.log_dir + '/'
+    check_dir(log_dir)
+    gan_writer = SummaryWriter(log_dir=log_dir)
+
     net.eval()
     cnet.train()
     znet.train()
