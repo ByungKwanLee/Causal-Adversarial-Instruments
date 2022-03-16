@@ -3,6 +3,7 @@ from models.vgg import vgg
 from models.resnet import resnet
 from models.wide import wide_resnet
 from models.densenet import densenet
+from models.cae import cae
 
 
 def get_network(network, depth, dataset, gpu, pretrained=False):
@@ -31,5 +32,7 @@ def get_network(network, depth, dataset, gpu, pretrained=False):
         return wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
     elif network == 'dense':
         return densenet(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
+    elif network == 'causal':
+        return cae(dataset=dataset)
     else:
         raise NotImplementedError
