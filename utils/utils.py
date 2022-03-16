@@ -28,8 +28,13 @@ def Resize(size):
     return inner
 
 def get_pseudo(adv_output):
+    idx = adv_output.argmax(dim=1)
+    b, c = adv_output.shape
+    psuedo_onehot = torch.FloatTensor(b, c).cuda()
+    psuedo_onehot.zero_()
+    psuedo_onehot.scatter_(1, idx.unsqueeze(-1), 1)
 
-    print("ok")
+    return psuedo_onehot
 
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]

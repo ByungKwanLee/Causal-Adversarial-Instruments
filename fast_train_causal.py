@@ -64,10 +64,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 best_acc = 0
 
 # LR Scheduler
-lr_schedule = {0: args.learning_rate,
-               int(args.epoch * 0.5): args.learning_rate * 0.1,
-               int(args.epoch * 0.75): args.learning_rate * 0.01}
-lr_scheduler = PresetLRScheduler(lr_schedule)
+# lr_schedule = {0: args.learning_rate,
+#                int(args.epoch * 0.5): args.learning_rate * 0.1,
+#                int(args.epoch * 0.75): args.learning_rate * 0.01}
+# lr_scheduler = PresetLRScheduler(lr_schedule)
 
 # init criterion
 criterion = nn.CrossEntropyLoss()
@@ -75,7 +75,7 @@ criterion = nn.CrossEntropyLoss()
 # Mix Training
 scaler = GradScaler()
 
-def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, criterion, lr_scheduler, scaler, attack, gpu):
+def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, scaler, attack, gpu):
     print('\nEpoch: %d' % epoch)
     net.eval()
     cnet.train()
@@ -86,10 +86,11 @@ def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, 
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
 
-    c_scheduler = lr_scheduler(c_optimizer, epoch)
-    z_scheduler = lr_scheduler(z_optimizer, epoch)
+    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
+    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(z_optimizer, milestones=[20, 40, 60], gamma=0.5)
+
     desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (c_scheduler.get_lr(c_optimizer), z_scheduler.get_lr(z_optimizer), 0, 0, correct, total))
+            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, correct, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -136,22 +137,13 @@ def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, 
         scaler.step(z_optimizer)
         scaler.update()
 
-
-
-
-
-
-
-
-
-
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        # train_loss += loss.item()
+        # _, predicted = outputs.max(1)
+        # total += targets.size(0)
+        # correct += predicted.eq(targets).sum().item()
 
         desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (c_scheduler.get_lr(c_optimizer), z_scheduler.get_lr(z_optimizer), train_loss / (batch_idx + 1),
+                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_loss / (batch_idx + 1),
                  100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -303,7 +295,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     z_optimizer = optim.SGD(znet.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
 
     for epoch in range(args.epoch):
-        causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, criterion, lr_scheduler, scaler, attack, gpu)
+        causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, scaler, attack, gpu)
         causal_test(epoch, net, cnet, znet, testloader, criterion, attack, gpu)
 
     dist.destroy_process_group()
