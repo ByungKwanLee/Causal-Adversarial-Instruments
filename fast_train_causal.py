@@ -82,7 +82,7 @@ def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, 
 
     log_dir = args.log_dir + '/'
     check_dir(log_dir)
-    gan_writer = SummaryWriter(log_dir=log_dir)
+    writer = SummaryWriter(log_dir=log_dir)
 
     net.eval()
     cnet.train()
@@ -144,6 +144,11 @@ def causal_train(epoch, net, cnet, znet, trainloader, c_optimizer, z_optimizer, 
         scaler.step(z_optimizer)
         scaler.update()
 
+        writer.add_scalar('Train/causal_loss', causal_loss, epoch)
+        writer.add_scalar('Train/inst_loss', inst_loss, epoch)
+        writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], epoch)
+
+        
         # train_loss += loss.item()
         # _, predicted = outputs.max(1)
         # total += targets.size(0)
