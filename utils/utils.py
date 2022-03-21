@@ -34,7 +34,7 @@ def get_pseudo(adv_output):
     psuedo_onehot.zero_()
     psuedo_onehot.scatter_(1, idx.unsqueeze(-1), 1)
 
-    return psuedo_onehot
+    return psuedo_onehot, idx
 
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]

@@ -42,7 +42,7 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool) # True for loading ImageNet pre-trained model
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.0001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -88,7 +88,9 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
     c_net.train()
     z_net.train()
     m_net.train()
-    train_loss = 0
+    train_closs = 0
+    train_zloss = 0
+    train_celoss = 0
     correct = 0
     total = 0
 
@@ -97,8 +99,8 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
     c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
     z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[20, 40, 60], gamma=0.5)
 
-    desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, correct, total))
+    desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
+            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0, correct, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -107,19 +109,18 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
 
-        # adv_inputs = attack(inputs, targets)
-        epsilon = torch.empty_like(inputs).uniform_(-args.eps, args.eps).cuda()
-        p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
+        # epsilon = torch.empty_like(inputs).uniform_(-args.eps, args.eps).cuda()
+        adv_inputs = attack(inputs, targets)
+        #p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
 
-        c_optimizer.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         # Accerlating forward propagation
         with autocast():
-            pseudo_feature = net(p_image, pop=True)
-            pseudo_output = net(pseudo_feature, int=True)
-            pseudo_label = get_pseudo(pseudo_output)
+            pseudo_output = net(adv_inputs)
+            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
 
-            inst_v = m_net(epsilon)
+            inst_v = m_net(adv_inputs - inputs)
             cln_feature = net(inputs, pop=True)
 
             treat_feature = cln_feature + inst_v
@@ -133,18 +134,20 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             causal_loss = ((pseudo_label - causal_output) * inst_output).mean()
 
         # Accerlating backward propagation
-        scaler.scale(causal_loss).backward()
+
+        scaler.scale(causal_loss).backward(retain_graph=True)
         scaler.step(c_optimizer)
         scaler.update()
 
-        inst_optimizer.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
-            inst_feature = z_net(inst_v)
-            inst_output = net(inst_feature, int=True)
+            causal_feature = c_net(treat_feature)
+            causal_output = net(causal_feature, int=True)
 
             inst_loss = -1. * (((pseudo_label - causal_output) * inst_output).mean())
-            ce_loss = criterion(pseudo_label, pseudo_label) # For XE loss checking
+
+            ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
             
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()
@@ -156,15 +159,17 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         writer.add_scalar('Train/ce_loss', ce_loss, epoch)
         writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], epoch)
 
-        
-        # train_loss += loss.item()
-        # _, predicted = outputs.max(1)
-        # total += targets.size(0)
-        # correct += predicted.eq(targets).sum().item()
+        train_closs += causal_loss
+        train_zloss += inst_loss
+        train_celoss += ce_loss
 
-        desc = ('[Train/C_LR=%s/Z_LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_loss / (batch_idx + 1),
-                 100. * correct / total, correct, total))
+        _, predicted = causal_output.max(1)
+        total += pseudo_predicted.size(0)
+        correct += predicted.eq(pseudo_predicted).sum().item()
+
+        desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
+                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
+                 train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
 def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu):
@@ -281,21 +286,23 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                       gpu=gpu,
                       pretrained=args.pretrained)
     net = net.to(memory_format=torch.channels_last).to(gpu)
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu], find_unused_parameters=True)
+    for params in net.parameters():
+        params.requires_grad = False
 
     c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
     c_net = c_net.to(memory_format=torch.channels_last).to(gpu)
-    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
+    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu], find_unused_parameters=True)
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
     z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
-    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
+    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu], find_unused_parameters=True)
 
     m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                         gpu=gpu, pretrained=None, exo=False, exo_net=args.network)
     m_net = m_net.to(memory_format=torch.channels_last).to(gpu)
-    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu])
+    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu], find_unused_parameters=True)
 
     # fast init dataloader
     trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
@@ -318,9 +325,12 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
 
     # init optimizer and lr scheduler
-    c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    inst_optimizer = optim.SGD([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
-                            momentum=0.9, weight_decay=args.weight_decay)
+    # c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    # inst_optimizer = optim.SGD([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
+    #                         momentum=0.9, weight_decay=args.weight_decay)
+    c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
+                               betas=(0.5, 0.999), weight_decay=1e-4)
 
     for epoch in range(args.epoch):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu)

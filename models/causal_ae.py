@@ -83,23 +83,23 @@ class CausalIV(nn.Module):
         self.nc = nc
 
         if dataset == 'imagenet':
-            c_list = []
-            k_list = []
+            self.c_list = []
+            self.k_list = []
         else:
-            k_list = 3
-            c_list = [512, 512, 1024, 1024, 512, 512]
+            self.k_list = 3
+            self.c_list = [512, 512, 1024, 1024, 512, 512]
 
         self.encoder = nn.Sequential(
-            conv_bn_relu(in_ch=nc, out_ch=c_list[0], k_size=k_list, padding_size=1),
-            conv_bn_relu(in_ch=c_list[0], out_ch=c_list[1], k_size=k_list, padding_size=1),
-            conv_bn_relu(in_ch=c_list[1], out_ch=c_list[2], k_size=k_list, padding_size=1),
+            conv_bn_relu(in_ch=nc, out_ch=self.c_list[0], k_size=self.k_list, padding_size=1),
+            conv_bn_relu(in_ch=self.c_list[0], out_ch=self.c_list[1], k_size=self.k_list, padding_size=1),
+            conv_bn_relu(in_ch=self.c_list[1], out_ch=self.c_list[2], k_size=self.k_list, padding_size=1),
         )
-        self.linear = nn.Sequential(nn.Linear(c_list[2], c_list[2]),
+        self.linear = nn.Sequential(nn.Linear(self.c_list[2], self.c_list[2]),
                                     nn.LeakyReLU(0.2))
         self.decoder = nn.Sequential(
-            deconv_bn_relu(in_ch=c_list[2], out_ch=c_list[3]),
-            deconv_bn_relu(in_ch=c_list[3], out_ch=c_list[4]),
-            deconv_bn_relu(in_ch=c_list[4], out_ch=c_list[5], last=True),
+            deconv_bn_relu(in_ch=self.c_list[2], out_ch=self.c_list[3]),
+            deconv_bn_relu(in_ch=self.c_list[3], out_ch=self.c_list[4]),
+            deconv_bn_relu(in_ch=self.c_list[4], out_ch=self.c_list[5], last=True),
         )
         self.weight_init()
 
@@ -111,6 +111,10 @@ class CausalIV(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         x = F.adaptive_avg_pool2d(x, [1, 1])
+        _, _, h, w = x.shape
+        x = x.view(-1, self.c_list[2])
+        x = self.linear(x)
+        x = x.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, h, w)
         x = self.decoder(x)
 
         return x
