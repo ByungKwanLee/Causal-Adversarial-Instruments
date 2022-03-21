@@ -2,6 +2,7 @@
 import os
 import argparse
 import warnings
+
 warnings.filterwarnings(action='ignore')
 
 import torch
@@ -38,7 +39,7 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool) # True for loading ImageNet pre-trained model
+parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -52,7 +53,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs_abs', help='directory of training logs')
 args = parser.parse_args()
 
 # multi-process
@@ -72,13 +73,14 @@ best_acc = 0
 
 # init criterion
 criterion = nn.CrossEntropyLoss()
-
+softmax = nn.Softmax(dim=1)
 # Mix Training
 scaler = GradScaler()
 counter = 0
 log_dir = args.log_dir + '/'
 check_dir(log_dir)
 writer = SummaryWriter(log_dir=log_dir)
+
 
 def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu):
     global counter
@@ -111,7 +113,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
 
         # epsilon = torch.empty_like(inputs).uniform_(-args.eps, args.eps).cuda()
         adv_inputs = attack(inputs, targets)
-        #p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
+        # p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
 
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
@@ -145,8 +147,8 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             causal_output = net(causal_feature, int=True)
 
             inst_loss = -1. * ((torch.abs(pseudo_label - causal_output) * inst_output).mean())
-            ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
-            
+            ce_loss = criterion(causal_output, pseudo_predicted)  # For XE loss checking
+
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()
         scaler.step(inst_optimizer)
@@ -170,6 +172,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
                  train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
+
 
 def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu):
     global best_acc
@@ -214,7 +217,6 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-
     # Save adv acc.
     pseudo_acc = 100. * correct / total
 
@@ -233,9 +235,12 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
             os.mkdir('checkpoint/pretrain')
 
         if gpu == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-            print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_abs_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.network, args.depth))
+            print('./checkpoint/pretrain/%s/%s_causal_abs_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.network, args.depth))
             best_acc = pseudo_acc
+
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     if gpu == int(args.gpu.split(',')[0]):
@@ -245,7 +250,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12356'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
     torch.cuda.set_device(gpu)
 
@@ -261,7 +266,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                       gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
+                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
     z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
 
@@ -275,10 +280,11 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
 
-    #Load backbone network parameters
+    # Load backbone network parameters
     print('==> Loading Backbone checkpoint..')
     assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+    checkpoint = torch.load(
+        'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader
@@ -294,8 +300,9 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # inst_optimizer = optim.SGD([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
     #                         momentum=0.9, weight_decay=args.weight_decay)
     c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
-                               betas=(0.5, 0.999), weight_decay=1e-4)
+    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}],
+                                 lr=args.learning_rate,
+                                 betas=(0.5, 0.999), weight_decay=1e-4)
 
     for epoch in range(args.epoch):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu)
@@ -303,8 +310,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     dist.destroy_process_group()
 
+
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
+
 
 if __name__ == '__main__':
     run()
