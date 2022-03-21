@@ -3,6 +3,7 @@ import os
 import argparse
 import warnings
 warnings.filterwarnings(action='ignore')
+import tracemalloc
 
 # Import torch
 import torch
@@ -76,13 +77,14 @@ criterion = nn.CrossEntropyLoss()
 
 # Mix Training
 scaler = GradScaler()
+counter = 0
+log_dir = args.log_dir + '/'
+check_dir(log_dir)
+writer = SummaryWriter(log_dir=log_dir)
 
 def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu):
+    global counter
     print('\nEpoch: %d' % epoch)
-
-    log_dir = args.log_dir + '/'
-    check_dir(log_dir)
-    writer = SummaryWriter(log_dir=log_dir)
 
     net.eval()
     c_net.train()
@@ -116,6 +118,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         # Accerlating forward propagation
+        #snapshot1 = tracemalloc.take_snapshot()
         with autocast():
             pseudo_output = net(adv_inputs)
             pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
@@ -146,7 +149,6 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             causal_output = net(causal_feature, int=True)
 
             inst_loss = -1. * (((pseudo_label - causal_output) * inst_output).mean())
-
             ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
             
         # Accerlating backward propagation
@@ -154,14 +156,19 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         scaler.step(inst_optimizer)
         scaler.update()
 
-        writer.add_scalar('Train/causal_loss', causal_loss, epoch)
-        writer.add_scalar('Train/inst_loss', inst_loss, epoch)
-        writer.add_scalar('Train/ce_loss', ce_loss, epoch)
-        writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], epoch)
+        # snapshot2 = tracemalloc.take_snapshot()
+        # top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+        # print(top_stats[0])
 
-        train_closs += causal_loss
-        train_zloss += inst_loss
-        train_celoss += ce_loss
+        writer.add_scalar('Train/causal_loss', causal_loss, counter)
+        writer.add_scalar('Train/inst_loss', inst_loss, counter)
+        writer.add_scalar('Train/ce_loss', ce_loss, counter)
+        writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
+
+        train_closs += causal_loss.item()
+        train_zloss += inst_loss.item()
+        train_celoss += ce_loss.item()
+        counter += 1
 
         _, predicted = causal_output.max(1)
         total += pseudo_predicted.size(0)
@@ -182,51 +189,34 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss/(0+1), 0, correct, total))
-
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
-    for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.to(gpu), targets.to(gpu)
-
-        # Accerlating forward propagation
-        with autocast():
-            outputs = c_net(inputs)
-            loss = criterion(outputs, targets)
-
-        test_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-
-        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
-        prog_bar.set_description(desc, refresh=True)
-
-    # Save clean acc.
-    clean_acc = 100. * correct / total
-
-    test_loss = 0
-    correct = 0
-    total = 0
 
     desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
             % (test_loss / (0 + 1), 0, correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs = attack(inputs, targets)
+        adv_inputs = attack(inputs, targets)
         inputs, targets = inputs.to(gpu), targets.to(gpu)
 
         # Accerlating forward propagation
         with autocast():
-            outputs = net(inputs)
-            loss = criterion(outputs, targets)
+            pseudo_output = net(adv_inputs)
+            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
+
+            inst_v = m_net(adv_inputs - inputs)
+            cln_feature = net(inputs, pop=True)
+
+            treat_feature = cln_feature + inst_v
+
+            causal_feature = c_net(treat_feature)
+            causal_output = net(causal_feature, int=True)
+
+            loss = criterion(causal_output, pseudo_predicted)
 
         test_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        _, predicted = causal_output.max(1)
+        total += pseudo_predicted.size(0)
+        correct += predicted.eq(pseudo_predicted).sum().item()
 
         desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
@@ -234,21 +224,13 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
 
 
     # Save adv acc.
-    adv_acc = 100. * correct / total
+    pseudo_acc = 100. * correct / total
 
-
-    # compute acc
-    acc = (clean_acc + adv_acc)/2
-
-    if gpu == int(args.gpu.split(',')[0]):
-        print('Averaged Accuracy is {:.2f}!!'.format(acc))
-
-
-    if acc > best_acc:
+    if pseudo_acc > best_acc:
         print('Saving..')
         state = {
             'net': net.state_dict(),
-            'acc': acc,
+            'acc': pseudo_acc,
             'epoch': epoch,
             'loss': loss,
             'args': args
@@ -265,7 +247,7 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
             print('./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                          args.network,
                                                                          args.depth))
-            best_acc = acc
+            best_acc = pseudo_acc
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     if gpu == int(args.gpu.split(',')[0]):
@@ -280,35 +262,30 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(gpu)
 
     # init model and Distributed Data Parallel
-    net = get_network(network=args.network,
-                      depth=args.depth,
-                      dataset=args.dataset,
-                      gpu=gpu,
-                      pretrained=args.pretrained)
+    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=gpu, pretrained=args.pretrained)
     net = net.to(memory_format=torch.channels_last).to(gpu)
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu], find_unused_parameters=True)
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
     for params in net.parameters():
         params.requires_grad = False
 
     c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
     c_net = c_net.to(memory_format=torch.channels_last).to(gpu)
-    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu], find_unused_parameters=True)
+    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
     z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
-    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu], find_unused_parameters=True)
+    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
 
     m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                         gpu=gpu, pretrained=None, exo=False, exo_net=args.network)
     m_net = m_net.to(memory_format=torch.channels_last).to(gpu)
-    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu], find_unused_parameters=True)
+    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu])
 
     # fast init dataloader
     trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
-
 
     #Load backbone network parameters
     print('==> Loading Backbone checkpoint..')
@@ -331,7 +308,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
-
+    #tracemalloc.start()
     for epoch in range(args.epoch):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu)
         causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu)
