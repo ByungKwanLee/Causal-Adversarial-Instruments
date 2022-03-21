@@ -132,7 +132,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             inst_feature = z_net(inst_v)
             inst_output = net(inst_feature, int=True)
 
-            causal_loss = (torch.abs(pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean()
+            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean()
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -145,7 +145,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            inst_loss = -1. * ((torch.abs(pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean())
+            inst_loss = -1. * (((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean())
             ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
             
         # Accerlating backward propagation

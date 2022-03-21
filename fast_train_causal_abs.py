@@ -53,7 +53,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs_abs', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs2', help='directory of training logs')
 args = parser.parse_args()
 
 # multi-process
