@@ -119,24 +119,26 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
 
         # Accerlating forward propagation
         with autocast():
+
+            # Not change variables
             adv_feature = net(adv_inputs, pop=True)
-            pseudo_output = net(adv_feature, int=True)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
             cln_feature = net(inputs, pop=True)
             res_feature = adv_feature - cln_feature
 
-            inst_v = m_net(adv_inputs - inputs)
+            pseudo_output = net(adv_feature, int=True)
+            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
 
+            # Others
+            inst_v = m_net(adv_inputs - inputs)
             treat_feature = cln_feature + inst_v
 
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
-
             inst_feature = z_net(inst_v)
             inst_output = net(inst_feature, int=True)
 
             recon_loss = ((inst_v - res_feature) ** 2).mean()
-            causal_loss = ((1 - (pseudo_label*softmax(causal_output)).sum(dim=-1)) * (pseudo_label*softmax(inst_output)).sum(dim=-1)).mean() + recon_loss
+            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).square().mean() + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -155,19 +157,8 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             inst_feature = z_net(inst_v)
             inst_output = net(inst_feature, int=True)
 
-            inst_loss = -((1 - (pseudo_label * softmax(causal_output)).sum(dim=-1)) * (
-                        pseudo_label * softmax(inst_output)).sum(dim=-1)).mean()
+            inst_loss = -((pseudo_label - softmax(causal_output)) * softmax(inst_output)).square().mean()
             ce_loss = criterion(causal_output, pseudo_predicted)  # For XE loss checking
-
-            # causal_feature = c_net(treat_feature)
-            # causal_output = net(causal_feature, int=True)
-            # inst_v = m_net(adv_inputs - inputs)
-            # recon_loss = ((inst_v - res_feature) ** 2).mean()
-            # inst_feature = z_net(inst_v)
-            # inst_output = net(inst_feature, int=True)
-            #
-            # inst_loss = -1. * ((1 - (pseudo_label*softmax(causal_output)).sum(dim=-1)) * (pseudo_label*softmax(inst_output)).sum(dim=-1)).mean() + recon_loss
-            # ce_loss = criterion(causal_output, pseudo_predicted)  # For XE loss checking
 
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()

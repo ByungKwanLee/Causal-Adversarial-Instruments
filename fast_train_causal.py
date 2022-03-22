@@ -142,8 +142,16 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
+            inst_v = m_net(adv_inputs - inputs)
+            cln_feature = net(inputs, pop=True)
+
+            treat_feature = cln_feature + inst_v
+
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
+
+            inst_feature = z_net(inst_v)
+            inst_output = net(inst_feature, int=True)
 
             inst_loss = -1. * (((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean())
             ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
@@ -152,16 +160,16 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         scaler.scale(inst_loss).backward()
         scaler.step(inst_optimizer)
         scaler.update()
-
-        writer.add_scalar('Train/causal_loss', causal_loss, counter)
-        writer.add_scalar('Train/inst_loss', inst_loss, counter)
-        writer.add_scalar('Train/ce_loss', ce_loss, counter)
-        writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
+        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
+            writer.add_scalar('Train/causal_loss', causal_loss, counter)
+            writer.add_scalar('Train/inst_loss', inst_loss, counter)
+            writer.add_scalar('Train/ce_loss', ce_loss, counter)
+            writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
+            counter += 1
 
         train_closs += causal_loss.item()
         train_zloss += inst_loss.item()
         train_celoss += ce_loss.item()
-        counter += 1
 
         _, predicted = causal_output.max(1)
         total += pseudo_predicted.size(0)
@@ -233,13 +241,13 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
 
-        if gpu == int(args.gpu.split(',')[0]):
+        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
             torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             best_acc = pseudo_acc
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-    if gpu == int(args.gpu.split(',')[0]):
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
         print('==> Making model..')
@@ -294,7 +302,9 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     # inst_optimizer = optim.SGD([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
     #                         momentum=0.9, weight_decay=args.weight_decay)
-    c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    # c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    c_optimizer = optim.AdamW([{'params': c_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
+                              betas=(0.5, 0.999), weight_decay=1e-4)
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
 
