@@ -11,8 +11,7 @@ import torch.optim as optim
 import torch.distributed as dist
 
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
-
+from torch.utils.tensorboard import SummaryWriter
 # Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
@@ -79,9 +78,8 @@ scaler = GradScaler()
 counter = 0
 log_dir = args.log_dir + '/'
 check_dir(log_dir)
-writer = SummaryWriter(log_dir=log_dir)
 
-def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu):
+def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer):
     global counter
     print('\nEpoch: %d' % epoch)
 
@@ -254,7 +252,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12356'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
     torch.cuda.set_device(gpu)
 
@@ -307,9 +305,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                               betas=(0.5, 0.999), weight_decay=1e-4)
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
+    writer = SummaryWriter(log_dir=log_dir)
 
     for epoch in range(args.epoch):
-        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu)
+        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer)
         causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu)
 
     dist.destroy_process_group()

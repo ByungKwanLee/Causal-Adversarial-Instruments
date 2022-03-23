@@ -12,8 +12,7 @@ import torch.optim as optim
 import torch.distributed as dist
 
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
-
+from torch.utils.tensorboard import SummaryWriter
 # Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
@@ -53,7 +52,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs2', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # multi-process
@@ -79,10 +78,8 @@ scaler = GradScaler()
 counter = 0
 log_dir = args.log_dir + '/'
 check_dir(log_dir)
-writer = SummaryWriter(log_dir=log_dir)
 
-
-def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu):
+def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer):
     global counter
     print('\nEpoch: %d' % epoch)
 
@@ -194,7 +191,6 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
                  train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-
 def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu):
     global best_acc
     net.eval()
@@ -271,7 +267,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12356'
+    os.environ['MASTER_PORT'] = '12357'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
     torch.cuda.set_device(gpu)
 
@@ -324,9 +320,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}],
                                  lr=args.learning_rate,
                                  betas=(0.5, 0.999), weight_decay=1e-4)
+    writer = SummaryWriter(log_dir=log_dir)
 
     for epoch in range(args.epoch):
-        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu)
+        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer)
         causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu)
 
     dist.destroy_process_group()
