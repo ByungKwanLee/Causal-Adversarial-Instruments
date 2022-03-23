@@ -11,7 +11,8 @@ import torch.optim as optim
 import torch.distributed as dist
 
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 # Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
@@ -116,11 +117,13 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
 
         # Accerlating forward propagation
         with autocast():
-            pseudo_output = net(adv_inputs)
+            adv_feature = net(adv_inputs, pop=True)
+            pseudo_output = net(adv_feature, int=True)
             pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
+            cln_feature = net(inputs, pop=True)
+            res_feature = adv_feature - cln_feature
 
             inst_v = m_net(adv_inputs - inputs)
-            cln_feature = net(inputs, pop=True)
 
             treat_feature = cln_feature + inst_v
 
@@ -130,7 +133,9 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             inst_feature = z_net(inst_v)
             inst_output = net(inst_feature, int=True)
 
-            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean()
+            recon_loss = ((inst_v - res_feature) ** 2).mean()
+
+            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -141,8 +146,6 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
 
         with autocast():
             inst_v = m_net(adv_inputs - inputs)
-            cln_feature = net(inputs, pop=True)
-
             treat_feature = cln_feature + inst_v
 
             causal_feature = c_net(treat_feature)
@@ -303,7 +306,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
     c_optimizer = optim.AdamW([{'params': c_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
                               betas=(0.5, 0.999), weight_decay=1e-4)
-    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
+    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
     writer = SummaryWriter(log_dir=log_dir)
 

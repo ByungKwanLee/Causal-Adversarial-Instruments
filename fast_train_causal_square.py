@@ -12,7 +12,8 @@ import torch.optim as optim
 import torch.distributed as dist
 
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 # Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
@@ -317,6 +318,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer)
         causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu)
 
+    writer.close()
     dist.destroy_process_group()
 
 
