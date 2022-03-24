@@ -51,6 +51,7 @@ parser.add_argument('--epoch', default=60, type=int)
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
+parser.add_argument('--local_rank', default=0, type=int)
 
 parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
@@ -60,7 +61,7 @@ ngpus_per_node = len(args.gpu.split(','))
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-
+print(args.local_rank)
 # global best_acc
 best_acc = 0
 
@@ -243,7 +244,7 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
             os.mkdir('checkpoint/pretrain')
 
         if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_r1_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_rnew_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             best_acc = pseudo_acc
 
@@ -267,16 +268,19 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
         params.requires_grad = False
 
     c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
+    c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
     c_net = c_net.to(memory_format=torch.channels_last).to(gpu)
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
+    z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
     z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
 
     m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
                         gpu=gpu, pretrained=None, exo=False, exo_net=args.network)
+    m_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(m_net)
     m_net = m_net.to(memory_format=torch.channels_last).to(gpu)
     m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu])
 
@@ -308,7 +312,11 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                               betas=(0.5, 0.999), weight_decay=1e-4)
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
-    writer = SummaryWriter(log_dir=log_dir)
+
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
+        writer = SummaryWriter(log_dir=log_dir)
+    else:
+        writer = None
 
     for epoch in range(args.epoch):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer)

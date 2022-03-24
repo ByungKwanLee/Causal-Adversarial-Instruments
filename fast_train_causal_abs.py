@@ -322,7 +322,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}],
                                  lr=args.learning_rate,
                                  betas=(0.5, 0.999), weight_decay=1e-4)
-    writer = SummaryWriter(log_dir=log_dir)
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
+        writer = SummaryWriter(log_dir=log_dir)
+    else:
+        writer = None
 
     for epoch in range(args.epoch):
         causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu, writer)
