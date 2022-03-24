@@ -133,7 +133,7 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
             inst_feature = z_net(inst_v)
             inst_output = net(inst_feature, int=True)
 
-            recon_loss = ((inst_v - res_feature) ** 2).mean()
+            recon_loss = ((causal_feature - adv_feature) ** 2).mean()
 
             causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
 
@@ -243,7 +243,7 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
             os.mkdir('checkpoint/pretrain')
 
         if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_r1_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             best_acc = pseudo_acc
 

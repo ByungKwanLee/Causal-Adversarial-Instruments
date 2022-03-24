@@ -25,12 +25,12 @@ class deconv_bn_relu(nn.Module):
         super(deconv_bn_relu, self).__init__()
         if last:
             self.deconv = nn.Sequential(
-                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1),
+                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm2d(out_ch),
              )
         else:
             self.deconv = nn.Sequential(
-                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=2, padding=1, output_padding=1),
+                nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm2d(out_ch),
                 nn.LeakyReLU(0.2)
             )
@@ -53,16 +53,16 @@ class CausalIV(nn.Module):
             self.c_list = [512, 512, 1024, 1024, 512, 512]
 
         self.encoder = nn.Sequential(
-            conv_bn_relu(in_ch=nc, out_ch=self.c_list[0], k_size=self.k_list, padding_size=1),
+            conv_bn_relu(in_ch=self.nc, out_ch=self.c_list[0], k_size=self.k_list, padding_size=1),
             conv_bn_relu(in_ch=self.c_list[0], out_ch=self.c_list[1], k_size=self.k_list, padding_size=1),
             conv_bn_relu(in_ch=self.c_list[1], out_ch=self.c_list[2], k_size=self.k_list, padding_size=1),
         )
-        self.linear = nn.Sequential(nn.Linear(self.c_list[2], self.c_list[2]),
+        self.linear = nn.Sequential(nn.Linear(self.c_list[2], self.c_list[3]),
                                     nn.LeakyReLU(0.2))
         self.decoder = nn.Sequential(
-            deconv_bn_relu(in_ch=self.c_list[2], out_ch=self.c_list[3]),
             deconv_bn_relu(in_ch=self.c_list[3], out_ch=self.c_list[4]),
-            deconv_bn_relu(in_ch=self.c_list[4], out_ch=self.c_list[5], last=True),
+            deconv_bn_relu(in_ch=self.c_list[4], out_ch=self.c_list[5]),
+            deconv_bn_relu(in_ch=self.c_list[5], out_ch=self.nc, last=True),
         )
         self.weight_init()
 
@@ -73,8 +73,8 @@ class CausalIV(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
-        x = F.adaptive_avg_pool2d(x, [1, 1])
         _, _, h, w = x.shape
+        x = F.adaptive_avg_pool2d(x, [1, 1])
         x = x.view(-1, self.c_list[2])
         x = self.linear(x)
         x = x.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, h, w)
