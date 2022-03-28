@@ -17,6 +17,14 @@ def set_random(seed):
     torch.random.manual_seed(seed)
     random.seed(seed)
 
+def checkpoint_module(checkpoint, net):
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in checkpoint.items():
+        name = k[7:]  # remove `module.`
+        new_state_dict[name] = v
+    net.load_state_dict(new_state_dict)
+
 def check_dir(dir_path):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)

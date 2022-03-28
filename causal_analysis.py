@@ -1,34 +1,22 @@
-# Import built-in module
+from __future__ import print_function
 import os
 import argparse
-import warnings
-
-warnings.filterwarnings(action='ignore')
-
 import torch
-import torchvision
 import torch.nn as nn
-import torch.optim as optim
-import torch.distributed as dist
 
 from tqdm import tqdm
-# from torch.utils.tensorboard import SummaryWriter
-from tensorboardX import SummaryWriter
-# Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
+from utils.visual_utils import *
 
 # attack loader
-# from attack.attack import attack_loader
 from attack.fastattack import attack_loader
 
-# Accelerating forward and backward
-from torch.cuda.amp import GradScaler, autocast
-
-torch.backends.cudnn.benchmark = True
-torch.autograd.profiler.emit_nvtx(False)
-torch.autograd.profiler.profile(False)
+# warning ignore
+import warnings
+warnings.filterwarnings("ignore")
+from utils.utils import str2bool
 
 # fetch args
 parser = argparse.ArgumentParser()
@@ -38,304 +26,187 @@ parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
-# learning parameter
-parser.add_argument('--learning_rate', default=0.0001, type=float)
-parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=128, type=float)
-parser.add_argument('--epoch', default=60, type=int)
+parser.add_argument('--base', default='plain', type=str)
+parser.add_argument('--batch_size', default=1, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
-parser.add_argument('--steps', default=10, type=int)
-parser.add_argument('--local_rank', default=0, type=int)
+parser.add_argument('--steps', default=30, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
+# visualization parameter
+parser.add_argument('--f_type', default='combine', type=str, help='option: posneg / single / combine')
+
 args = parser.parse_args()
 
-# multi-process
-ngpus_per_node = len(args.gpu.split(','))
+# Printing configurations
+print_configuration(args)
 
-# cuda visible devices
-os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-print(args.local_rank)
-# global best_acc
-best_acc = 0
+# GPU configurations
+os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
-# LR Scheduler
-# lr_schedule = {0: args.learning_rate,
-#                int(args.epoch * 0.5): args.learning_rate * 0.1,
-#                int(args.epoch * 0.75): args.learning_rate * 0.01}
-# lr_scheduler = PresetLRScheduler(lr_schedule)
+# init dataloader
+_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, gpu=args.gpu, dist=False)
+
+# init model
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=int(args.gpu), pretrained=args.pretrained)
+c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=int(args.gpu), pretrained=None)
+z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, gpu=int(args.gpu), pretrained=None, exo=True, exo_net=args.network)
+
+net = net.cuda()
+c_net = c_net.cuda()
+z_net = z_net.cuda()
+
+# Load Plain Network
+print('==> Loading Plain checkpoint..')
+assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
+
+# Loading checkpoint
+
+
+net_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_rnew_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+
+net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
+c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
+z_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['z_net']
+
+print(" [*] Loading Checkpoints ...")
+checkpoint_module(net_checkpoint, net)
+checkpoint_module(c_net_checkpoint, c_net)
+checkpoint_module(z_net_checkpoint, z_net)
 
 # init criterion
 criterion = nn.CrossEntropyLoss()
-softmax = nn.Softmax(dim=1)
 
-# Mix Training
-scaler = GradScaler()
-counter = 0
-log_dir = args.log_dir + '/'
-check_dir(log_dir)
-
-
-def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu,
-                 writer):
-    global counter
-    print('\nEpoch: %d' % epoch)
-
+def test():
     net.eval()
-    c_net.train()
-    z_net.train()
-    m_net.train()
-    train_closs = 0
-    train_zloss = 0
-    train_celoss = 0
-    correct = 0
-    total = 0
-
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
-
-    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
-    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[20, 40, 60], gamma=0.5)
-
-    desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0, correct, total))
-
-    prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
-    for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.to(gpu), targets.to(gpu)
-
-        if args.dataset == 'imagenet':
-            inputs = resize(inputs)
-
-        # epsilon = torch.empty_like(inputs).uniform_(-args.eps, args.eps).cuda()
-        adv_inputs = attack(inputs, targets)
-        # p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
-
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
-
-        # Accerlating forward propagation
-        with autocast():
-            adv_feature = net(adv_inputs, pop=True)
-            pseudo_output = net(adv_feature, int=True)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
-            cln_feature = net(inputs, pop=True)
-            res_feature = adv_feature - cln_feature
-
-            inst_v = m_net(adv_inputs - inputs)
-
-            treat_feature = cln_feature + inst_v
-
-            causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
-
-            inst_feature = z_net(inst_v)
-            inst_output = net(inst_feature, int=True)
-
-            recon_loss = ((causal_feature - adv_feature) ** 2).mean()
-
-            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
-
-        # Accerlating backward propagation
-        scaler.scale(causal_loss).backward(retain_graph=True)
-        scaler.step(c_optimizer)
-        scaler.update()
-
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
-
-        with autocast():
-            inst_v = m_net(adv_inputs - inputs)
-            treat_feature = cln_feature + inst_v
-
-            causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
-
-            inst_feature = z_net(inst_v)
-            inst_output = net(inst_feature, int=True)
-
-            inst_loss = -1. * (((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean())
-            ce_loss = criterion(causal_output, pseudo_predicted)  # For XE loss checking
-
-        # Accerlating backward propagation
-        scaler.scale(inst_loss).backward()
-        scaler.step(inst_optimizer)
-        scaler.update()
-        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-            writer.add_scalar('Train/causal_loss', causal_loss, counter)
-            writer.add_scalar('Train/inst_loss', inst_loss, counter)
-            writer.add_scalar('Train/ce_loss', ce_loss, counter)
-            writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
-            counter += 1
-
-        train_closs += causal_loss.item()
-        train_zloss += inst_loss.item()
-        train_celoss += ce_loss.item()
-
-        _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
-
-        desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
-                 train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
-        prog_bar.set_description(desc, refresh=True)
-
-
-def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu):
-    global best_acc
-    net.eval()
-    c_net.eval()
-    z_net.eval()
-    m_net.eval()
-
     test_loss = 0
-    correct = 0
-    total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss / (0 + 1), 0, correct, total))
+    attack_score = []
+    attack_module = {}
+    # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
+    for attack_name in ['pgd']:
+        args.attack = attack_name
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
+                                                   eps=args.eps, steps=args.steps,
+                                                   dataset=args.dataset) \
+            if attack_name != 'Plain' else None
 
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
+
+    for key in attack_module:
+        total = 0
+        correct = 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.cuda(), targets.cuda()
+            if key != 'Plain':
+                inputs = attack_module[key](inputs, targets)
+            outputs = net(inputs)
+            loss = criterion(outputs, targets)
+
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            desc = ('[Test/%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                    % (key, test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+            prog_bar.set_description(desc, refresh=True)
+
+            # fast eval
+            if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
+                if batch_idx >= int(len(testloader) * 0.3):
+                    break
+
+        attack_score.append(100. * correct / total)
+
+    print('\n----------------Summary----------------')
+    print(args.steps, ' steps attack')
+    for key, score in zip(attack_module, attack_score):
+        print(str(key), ' : ', str(score) + '(%)')
+    print('---------------------------------------\n')
+
+def visualizaition():
+    net.eval()
+
+    if args.base == 'plain':
+        save_dir = './results/feature_vis/clean_vis_' + str(args.dataset) + '_' + str(args.network)
+    else:
+        save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+
+    check_dir(save_dir)
+    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
+
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
-        adv_inputs = attack(inputs, targets)
-        inputs, targets = inputs.to(gpu), targets.to(gpu)
+        inputs, targets = inputs.cuda(), targets.cuda()
 
-        # Accerlating forward propagation
-        with autocast():
-            pseudo_output = net(adv_inputs)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
+        if args.base != 'plain':
+            inputs = attack(inputs, targets) if args.eps != 0 else inputs
 
-            inst_v = m_net(adv_inputs - inputs)
-            cln_feature = net(inputs, pop=True)
+        int_latent = net(inputs, pop=True)
+        inv = SpInversion(int_latent.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
 
-            treat_feature = cln_feature + inst_v
+        _, pred = net(int_latent, int=True).max(1)
+        label = [targets.item(), pred.item()]
 
-            causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
+        save_img = feature_vis(inputs, inv, label, dataset=args.dataset)
+        save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
+        print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
-            loss = criterion(causal_output, pseudo_predicted)
+def net_visualize():
+    net.eval()
 
-        test_loss += loss.item()
-        _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
-
-        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
-        prog_bar.set_description(desc, refresh=True)
-
-    # Save adv acc.
-    pseudo_acc = 100. * correct / total
-
-    if pseudo_acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.state_dict(),
-            'acc': pseudo_acc,
-            'epoch': epoch,
-            'loss': loss,
-            'args': args
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        if not os.path.isdir('checkpoint/pretrain'):
-            os.mkdir('checkpoint/pretrain')
-
-        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_rnew_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
-            print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
-            best_acc = pseudo_acc
-
-
-def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-        # Printing configurations
-        print_configuration(args)
-        print('==> Making model..')
-
-    print("Use GPU: {} for training".format(gpu))
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12356'
-    dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
-    torch.cuda.set_device(gpu)
-
-    # init model and Distributed Data Parallel
-    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=gpu, pretrained=args.pretrained)
-    net = net.to(memory_format=torch.channels_last).to(gpu)
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
-    for params in net.parameters():
-        params.requires_grad = False
-
-    c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
-    c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
-    c_net = c_net.to(memory_format=torch.channels_last).to(gpu)
-    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
-
-    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
-    z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
-    z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
-    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
-
-    m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        gpu=gpu, pretrained=None, exo=False, exo_net=args.network)
-    m_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(m_net)
-    m_net = m_net.to(memory_format=torch.channels_last).to(gpu)
-    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu])
-
-    # fast init dataloader
-    trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
-                                                  train_batch_size=args.batch_size,
-                                                  test_batch_size=args.test_batch_size, gpu=gpu)
-
-    # Load backbone network parameters
-    print('==> Loading Backbone checkpoint..')
-    assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load(
-        'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
-    net.load_state_dict(checkpoint['net'])
-
-    # Attack loader
-    if args.dataset == 'imagenet':
-        print('Fast FGSM training')
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps, dataset=args.dataset)
+    if args.base == 'plain':
+        save_dir = './results/net_vis/%s/clean_vis_' % (str(args.f_type)) + str(args.dataset) + '_' + str(args.network)
     else:
-        print('PGD training')
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
+        save_dir = './results/net_vis/%s/%s_vis_' % (str(args.f_type), str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
-    # init optimizer and lr scheduler
-    # c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    # inst_optimizer = optim.SGD([{'params': z_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
-    #                         momentum=0.9, weight_decay=args.weight_decay)
-    # c_optimizer = optim.AdamW(c_net.parameters(), lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-    c_optimizer = optim.AdamW([{'params': c_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
-                              betas=(0.5, 0.999), weight_decay=1e-4)
-    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate,
-                                 betas=(0.5, 0.999), weight_decay=1e-4)
+    check_dir(save_dir)
 
-    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-        writer = SummaryWriter(log_dir=log_dir)
+    inv = NetInversion(net, network=args.network)
+
+    if args.f_type == 'posneg':
+        sl, pu, nu = 4, 1, 2
+        fig = inv.pos_neg_invert(selected_layer=sl, positive_unit=pu, negative_unit=nu)
+        layer_info = [sl, pu, nu]
+
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_P%d_N%d.png' % (sl, pu, nu))
+
+    elif args.f_type == 'single':
+        sl, su = 4, 1
+
+        fig = inv.single_invert(selected_layer=sl, target_unit=su)
+        layer_info = [sl, su]
+
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_C%d.png' % (sl, su))
+
+    elif args.f_type == 'combine':
+        sl1, sl2, tu1, tu2 = 4, 4, 1, 2
+        fig = inv.combine_invert(selected_layer1=sl1, selected_layer2=sl2, target_unit1=tu1, target_unit2=tu2)
+        layer_info = [sl1, sl2, tu1, tu2]
+
+        save_img = network_vis(fig, layer_info, args.f_type)
+        save_img.save(save_dir + '/L%d_%d_C%d_%d.png' % (sl1, sl2, tu1, tu2))
+
     else:
-        writer = None
+        raise Exception(" [*] Wrong selection of visualization method .")
 
-    for epoch in range(args.epoch):
-        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, gpu,
-                     writer)
-        causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, gpu)
-
-    dist.destroy_process_group()
-
-
-def run():
-    torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
-
+    print("\n [*] Inversion Img is saved")
 
 if __name__ == '__main__':
-    run()
+    set_random(777)
+    net_visualize()
+    #visualizaition()
+
+
+
+
+
+
