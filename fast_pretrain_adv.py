@@ -34,21 +34,21 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--network', default='resnet', type=str)
 
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool)
+parser.add_argument('--pretrained', default=True, type=str2bool)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
-# attack parameter
+# attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
@@ -75,21 +75,6 @@ criterion = nn.CrossEntropyLoss()
 # Mix Training
 scaler = GradScaler()
 
-
-def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
-    assert min_res <= max_res
-
-    if epoch <= start_ramp:
-        return min_res
-
-    if epoch >= end_ramp:
-        return max_res
-
-    # otherwise, linearly interpolate to the nearest multiple of 32
-    interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
-    final_res = int(np.round(interp[0] / 32)) * 32
-    return final_res
-
 def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu):
     print('\nEpoch: %d' % epoch)
     net.train()
@@ -97,8 +82,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
     correct = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=65, start_ramp=76)
-
+    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
     lr_scheduler(optimizer, epoch)
     desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
@@ -197,12 +181,11 @@ def test(epoch, net, testloader, criterion, attack, gpu):
     # compute acc
     acc = (clean_acc + adv_acc)/2
 
-    if gpu == int(args.gpu.split(',')[0]):
-        print('Averaged Accuracy is {:.2f}!!'.format(acc))
-
+    print('Current Accuracy is {:.2f}!!'.format(acc))
 
     if acc > best_acc:
-        print('Saving..')
+        print('Best Accuracy is {:.2f}!!'.format(best_acc))
+
         state = {
             'net': net.state_dict(),
             'acc': acc,
@@ -215,20 +198,22 @@ def test(epoch, net, testloader, criterion, attack, gpu):
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
  
-        if gpu == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                         args.network,
-                                                                         args.depth))
-            print('./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                         args.network,
-                                                                         args.depth))
-            best_acc = acc
+
+        print('Saving..')
+        torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                                                                     args.network,
+                                                                     args.depth))
+        print('./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                                                                     args.network,
+                                                                     args.depth))
+        best_acc = acc
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-    if gpu == int(args.gpu.split(',')[0]):
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
         print('==> Making model..')
+
 
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -250,6 +235,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size, gpu=gpu)
 
+
     if not args.pretrained:
         # Load Plain Network
         print('==> Loading Plain checkpoint..')
@@ -257,17 +243,19 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
         checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
         net.load_state_dict(checkpoint['net'])
 
+    # Test
+    # test_robustness(net, testloader, criterion, attack_list=['Plain'], gpu=gpu)
+
     # Attack loader
     if args.dataset == 'imagenet':
         print('Fast FGSM training')
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255, steps=args.steps)
     else:
         print('PGD training')
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-
 
     for epoch in range(args.epoch):
         train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, attack, gpu)

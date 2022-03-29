@@ -87,9 +87,7 @@ def test():
     for attack_name in ['pgd']:
         args.attack = attack_name
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
-                                                   eps=args.eps, steps=args.steps,
-                                                   dataset=args.dataset) \
-            if attack_name != 'Plain' else None
+                                                   eps=args.eps, steps=args.steps) if attack_name != 'Plain' else None
 
 
     for key in attack_module:
