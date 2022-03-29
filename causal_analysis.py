@@ -68,7 +68,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_rnew_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -132,11 +132,15 @@ def test():
 
 def visualizaition():
     net.eval()
+    c_net.eval()
+    z_net.eval()
 
     if args.base == 'plain':
         save_dir = './results/feature_vis/clean_vis_' + str(args.dataset) + '_' + str(args.network)
-    else:
+    elif args.base == 'adv':
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+    else:
+        save_dir = './results/feature_vis/causal_vis_' + str(args.dataset) + '_' + str(args.network)
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
@@ -144,15 +148,27 @@ def visualizaition():
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
+        adv_inputs = attack(inputs, targets)
 
-        if args.base != 'plain':
-            inputs = attack(inputs, targets) if args.eps != 0 else inputs
+        adv_feature = net(adv_inputs, pop=True)
+        cln_feature = net(inputs, pop=True)
 
-        int_latent = net(inputs, pop=True)
-        inv = SpInversion(int_latent.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+        inst_feature = z_net(adv_feature - cln_feature)
+        treat_feature = cln_feature + inst_feature
+        causal_feature = c_net(treat_feature)
 
-        _, pred = net(int_latent, int=True).max(1)
-        label = [targets.item(), pred.item()]
+        adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+        causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+        treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+        inst_inv = SpInversion(inst_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+
+        _, adv_pred = net(adv_feature, int=True).max(1)
+        _, causal_pred = net(causal_feature, int=True).max(1)
+        _, treat_pred = net(treat_feature, int=True).max(1)
+        _, inst_pred = net(inst_feature, int=True).max(1)
+
+        label = [targets.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
+        inv = [adv_inv, causal_inv, treat_inv, inst_inv]
 
         save_img = feature_vis(inputs, inv, label, dataset=args.dataset)
         save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
@@ -160,6 +176,8 @@ def visualizaition():
 
 def net_visualize():
     net.eval()
+    c_net.eval()
+    z_net.eval()
 
     if args.base == 'plain':
         save_dir = './results/net_vis/%s/clean_vis_' % (str(args.f_type)) + str(args.dataset) + '_' + str(args.network)
@@ -202,8 +220,8 @@ def net_visualize():
 
 if __name__ == '__main__':
     set_random(777)
-    net_visualize()
-    #visualizaition()
+    #net_visualize()
+    visualizaition()
 
 
 
