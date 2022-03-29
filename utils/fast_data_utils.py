@@ -130,8 +130,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
             if name == 'train':
                 image_pipeline.extend([
                     RandomHorizontalFlip(),
-                    # RandomTranslate(padding=int(img_size / 16.), fill=tuple(map(int, mean))),
-                    RandomTranslate(padding=int(img_size / 8.)),
+                    RandomTranslate(padding=int(img_size / 8.), fill=tuple(map(int, mean))),
                 ])
             image_pipeline.extend([
                 ToTensor(),

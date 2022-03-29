@@ -2,7 +2,7 @@ from attack.libfastattack.FastPGD import FastPGD
 from attack.libfastattack.FastFGSM import FastFGSM
 from attack.libfastattack.FastFGSMTrain import FastFGSMTrain
 
-def attack_loader(net, attack, eps, steps, dataset):
+def attack_loader(net, attack, eps, steps):
 
     # Gradient Clamping based Attack
     # torch attacks

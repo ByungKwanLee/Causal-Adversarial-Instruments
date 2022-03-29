@@ -160,7 +160,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu):
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
 
-        if gpu == int(args.gpu.split(',')[0]):
+        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
             torch.save(state, './checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                          args.network,
                                                                          args.depth))
@@ -171,7 +171,7 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu):
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
-    if gpu == int(args.gpu.split(',')[0]):
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
         print('==> Making model..')

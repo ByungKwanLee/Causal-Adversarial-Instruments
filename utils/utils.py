@@ -275,3 +275,50 @@ class PresetLRScheduler(object):
         for param_group in optimizer.param_groups:
             lr = param_group['lr']
             return lr
+
+
+# attack loader
+from attack.fastattack import attack_loader
+from tqdm import tqdm
+def test_robustness(net, testloader, criterion, attack_list, gpu):
+    net.eval()
+    test_loss = 0
+
+    attack_score = []
+    attack_module = {}
+    for attack_name in attack_list:
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
+                                                                                if attack_name != 'Plain' else None
+
+    for key in attack_module:
+        total = 0
+        correct = 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.to(gpu), targets.to(gpu)
+            if key != 'Plain':
+                inputs = attack_module[key](inputs, targets)
+            outputs = net(inputs)
+            loss = criterion(outputs, targets)
+
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            desc = ('[Test/%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                    % (key, test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+            prog_bar.set_description(desc, refresh=True)
+
+            # fast eval
+            if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
+                if batch_idx >= int(len(testloader) * 0.3):
+                    break
+
+        attack_score.append(100. * correct / total)
+
+    print('\n----------------Summary----------------')
+    print(30, ' steps attack')
+    for key, score in zip(attack_module, attack_score):
+        print(str(key), ' : ', str(score) + '(%)')
+    print('---------------------------------------\n')
