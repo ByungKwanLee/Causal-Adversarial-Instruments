@@ -35,17 +35,16 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--pretrained', default=True, type=str2bool)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--pretrained', default=False, type=str2bool) # True for loading ImageNet pre-trained model
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=64, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
@@ -83,6 +82,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
     total = 0
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
+
     lr_scheduler(optimizer, epoch)
     desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
@@ -93,6 +93,7 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, a
         inputs, targets = inputs.to(gpu), targets.to(gpu)
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
+
         inputs = attack(inputs, targets)
         optimizer.zero_grad()
 
@@ -197,16 +198,16 @@ def test(epoch, net, testloader, criterion, attack, gpu):
             os.mkdir('checkpoint')
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
- 
 
-        print('Saving..')
-        torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                     args.network,
-                                                                     args.depth))
-        print('./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                     args.network,
-                                                                     args.depth))
-        best_acc = acc
+        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
+            torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                                                                         args.network,
+                                                                         args.depth))
+            print('./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                                                                         args.network,
+                                                                         args.depth))
+            best_acc = acc
+
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):

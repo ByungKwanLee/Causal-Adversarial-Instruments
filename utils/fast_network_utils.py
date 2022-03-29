@@ -3,9 +3,11 @@ from models.vgg import vgg
 from models.resnet import resnet
 from models.wide import wide_resnet
 from models.densenet import densenet
+from models.causal_ae import causal
+from models.exo_generator import exogenous
 
 
-def get_network(network, depth, dataset, gpu, pretrained=False):
+def get_network(network, depth, dataset, gpu, pretrained=False, exo=False, exo_net=None):
 
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465]).to(gpu)
@@ -31,5 +33,9 @@ def get_network(network, depth, dataset, gpu, pretrained=False):
         return wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
     elif network == 'dense':
         return densenet(depth=depth, dataset=dataset, mean=mean, std=std, pretrained=pretrained)
+    elif network == 'causal':
+        return causal(dataset=dataset)
+    elif network == 'instrument':
+        return exogenous(dataset=dataset, mean=mean, std=std, exo=exo, network=exo_net)
     else:
         raise NotImplementedError

@@ -17,6 +17,14 @@ def set_random(seed):
     torch.random.manual_seed(seed)
     random.seed(seed)
 
+def checkpoint_module(checkpoint, net):
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in checkpoint.items():
+        name = k[7:]  # remove `module.`
+        new_state_dict[name] = v
+    net.load_state_dict(new_state_dict)
+
 def check_dir(dir_path):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
@@ -26,6 +34,15 @@ def Resize(size):
         return F.interpolate(image_t, size=size, mode='bilinear')
 
     return inner
+
+def get_pseudo(adv_output):
+    idx = adv_output.argmax(dim=1)
+    b, c = adv_output.shape
+    psuedo_onehot = torch.FloatTensor(b, c).cuda()
+    psuedo_onehot.zero_()
+    psuedo_onehot.scatter_(1, idx.unsqueeze(-1), 1)
+
+    return psuedo_onehot, idx
 
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]
@@ -184,7 +201,6 @@ class StairCaseLRScheduler(object):
         for param_group in optimizer.param_groups:
             lr = param_group['lr']
             return lr
-
 
 class PresetLRScheduler(object):
     """Using a manually designed learning rate schedule rules.

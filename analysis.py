@@ -22,9 +22,9 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str) #imagenet cifar10 svhn tiny
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--dataset', default='cifar10', type=str) #imagenet cifar10 svhn tiny
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='plain', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
 parser.add_argument('--gpu', default='0', type=str)
@@ -195,8 +195,8 @@ def net_visualize():
 
 if __name__ == '__main__':
     set_random(777)
-    net_visualize()
-    #visualizaition()
+    #net_visualize()
+    visualizaition()
 
 
 
