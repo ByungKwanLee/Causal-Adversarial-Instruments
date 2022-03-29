@@ -123,7 +123,6 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
             'test': f'../ffcv_data/{dataset}/{dataset}_test.beton'
         }
 
-
         loaders = {}
         for name in ['train', 'test']:
             image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]

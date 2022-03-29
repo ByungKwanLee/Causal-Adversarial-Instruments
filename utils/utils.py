@@ -89,6 +89,58 @@ def network_vis(fig, layer_info, f_type):
 
     return bg_img
 
+def causal_vis(img, inv, label, dataset=None):
+    img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
+    # img = resize(img, (224, 224), anti_aliasing=True)
+    # adv_inv = resize(inv[0], (224, 224), anti_aliasing=True)
+    # causal_inv = resize(inv[1], (224, 224), anti_aliasing=True)
+    # treat_inv = resize(inv[2], (224, 224), anti_aliasing=True)
+    # inst_inv = resize(inv[3], (224, 224), anti_aliasing=True)
+
+    ori_img = Image.fromarray((img * 255).astype(np.uint8))
+    ori_adv = Image.fromarray((inv[0] * 255).astype(np.uint8))
+    ori_causal = Image.fromarray((inv[1] * 255).astype(np.uint8))
+    ori_treat = Image.fromarray((inv[2] * 255).astype(np.uint8))
+    ori_inst = Image.fromarray((inv[3] * 255).astype(np.uint8))
+
+    ori_img = ori_img.resize((224, 224), Image.NEAREST)
+    ori_adv = ori_adv.resize((224, 224), Image.NEAREST)
+    ori_causal = ori_causal.resize((224, 224), Image.NEAREST)
+    ori_treat = ori_treat.resize((224, 224), Image.NEAREST)
+    ori_inst = ori_inst.resize((224, 224), Image.NEAREST)
+
+    bg_img = Image.new("RGB", (224 * 5 + 20 * 6, 224 * 1 + 40), color=(255, 255, 255))
+
+    bg_img.paste(ori_img, (20, 20))
+    bg_img.paste(ori_adv, (224 * 1 + 20 * 2, 20))
+    bg_img.paste(ori_causal, (224 * 2 + 20 * 3, 20))
+    bg_img.paste(ori_treat, (224 * 3 + 20 * 4, 20))
+    bg_img.paste(ori_inst, (224 * 4 + 20 * 5, 20))
+
+    if dataset == 'svhn':
+        o_label = [str(i) for i in range(10)]
+    elif dataset == 'cifar10':
+        o_label = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    elif dataset == 'tiny':
+        o_label = list(range(1, 201))
+    elif dataset == 'imagenet':
+        f = open("./utils/imagenet_label.txt", 'r')
+        lines = f.readlines()
+        target = lines[label[0]].split(',')[0].split(':')[1].split("'")[1]
+        pred = lines[label[1]].split(',')[0].split(':')[1].split("'")[1]
+        o_label = [target, pred]
+        f.close()
+
+    draw = ImageDraw.Draw(bg_img)
+
+    draw.text((20, 0), 'Image: ' + str(o_label[label[0]]), fill='blue', font=selectedFont)
+    draw.text((224 * 1 + 20 * 2, 0), 'ADV Inv: ' + str(o_label[label[1]]), fill='red', font=selectedFont)
+    draw.text((224 * 2 + 20 * 3, 0), 'Causal Inv: ' + str(o_label[label[2]]), fill='red', font=selectedFont)
+    draw.text((224 * 3 + 20 * 4, 0), 'Treat Inv: ' + str(o_label[label[3]]), fill='red', font=selectedFont)
+    draw.text((224 * 4 + 20 * 5, 0), 'Inst Inv: ' + str(o_label[label[4]]), fill='red', font=selectedFont)
+
+    return bg_img
+
 def feature_vis(img, inv, label, dataset=None):
 
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])

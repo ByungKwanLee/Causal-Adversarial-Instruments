@@ -29,7 +29,7 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
-parser.add_argument('--base', default='plain', type=str)
+parser.add_argument('--base', default='causal', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
 
 # attack parameter
@@ -170,7 +170,7 @@ def visualizaition():
         label = [targets.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
         inv = [adv_inv, causal_inv, treat_inv, inst_inv]
 
-        save_img = feature_vis(inputs, inv, label, dataset=args.dataset)
+        save_img = causal_vis(inputs, inv, label, dataset=args.dataset)
         save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
         print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
