@@ -65,8 +65,6 @@ print('==> Loading Plain checkpoint..')
 assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
 
 # Loading checkpoint
-
-
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
