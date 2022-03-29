@@ -42,7 +42,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 ngpus_per_node = len(args.gpu.split(','))
 
 def main_worker(gpu, ngpus_per_node=ngpus_per_node):
-    if gpu == int(args.gpu.split(',')[0]):
+    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
         # Printing configurations
         print_configuration(args)
         print('==> Making model..')
