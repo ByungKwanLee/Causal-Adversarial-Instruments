@@ -44,6 +44,14 @@ def get_pseudo(adv_output):
 
     return psuedo_onehot, idx
 
+def get_onehot(adv_output, targets):
+    b, c = adv_output.shape
+    psuedo_onehot = torch.FloatTensor(b, c).cuda()
+    psuedo_onehot.zero_()
+    psuedo_onehot.scatter_(1, targets.unsqueeze(-1), 1)
+
+    return psuedo_onehot
+
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]
     weight = np.zeros([depth, depth, out_c, out_c])
@@ -91,12 +99,6 @@ def network_vis(fig, layer_info, f_type):
 
 def causal_vis(img, inv, label, dataset=None):
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
-    # img = resize(img, (224, 224), anti_aliasing=True)
-    # adv_inv = resize(inv[0], (224, 224), anti_aliasing=True)
-    # causal_inv = resize(inv[1], (224, 224), anti_aliasing=True)
-    # treat_inv = resize(inv[2], (224, 224), anti_aliasing=True)
-    # inst_inv = resize(inv[3], (224, 224), anti_aliasing=True)
-
     ori_img = Image.fromarray((img * 255).astype(np.uint8))
     ori_adv = Image.fromarray((inv[0] * 255).astype(np.uint8))
     ori_causal = Image.fromarray((inv[1] * 255).astype(np.uint8))
@@ -142,15 +144,12 @@ def causal_vis(img, inv, label, dataset=None):
     return bg_img
 
 def feature_vis(img, inv, label, dataset=None):
-
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
-
-    if img.shape[0] != 224:
-        img = resize(img, (224, 224), anti_aliasing=True)
-        inv = resize(inv, (224, 224), anti_aliasing=True)
 
     ori_img = Image.fromarray((img * 255).astype(np.uint8))
     ori_inv = Image.fromarray((inv * 255).astype(np.uint8))
+    ori_img = ori_img.resize((224, 224), Image.NEAREST)
+    ori_inv = ori_inv.resize((224, 224), Image.NEAREST)
 
     bg_img = Image.new("RGB", (224 * 2 + 20 * 3, 224 * 1 + 40), color=(255, 255, 255))
 

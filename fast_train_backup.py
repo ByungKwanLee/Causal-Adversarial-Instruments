@@ -299,10 +299,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'imagenet':
         print('Fast FGSM training')
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps)
     else:
         print('PGD training')
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
     # c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)

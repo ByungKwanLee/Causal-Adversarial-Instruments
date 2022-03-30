@@ -53,7 +53,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs2', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # multi-process
@@ -117,8 +117,8 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
 
-            pseudo_output = net(adv_feature, int=True)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
+            adv_output = net(adv_feature, int=True)
+            onehot_target = get_onehot(adv_output, targets)
 
             inst_feature = z_net(adv_feature - cln_feature)
             inst_output = net(inst_feature, int=True)
@@ -128,7 +128,9 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean().square()
+            recon_loss = ((causal_feature - adv_feature) ** 2).mean()
+
+            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -141,9 +143,9 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            inst_loss = -1. * (((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean()).square()
-            ce_loss = criterion(causal_output, pseudo_predicted)  # For XE loss checking
-            ce_loss2 = criterion(inst_output, pseudo_predicted)  # For XE loss checking
+            inst_loss = -1. * (((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean())
+            ce_loss = criterion(causal_output, targets)  # For XE loss checking
+            ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
 
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()
@@ -154,6 +156,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             writer.add_scalar('Train/inst_loss', inst_loss, counter)
             writer.add_scalar('Train/causlXE_loss', ce_loss, counter)
             writer.add_scalar('Train/instXE_loss', ce_loss2, counter)
+            writer.add_scalar('Train/recon_loss', recon_loss, counter)
             writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
             counter += 1
 
@@ -162,13 +165,14 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         train_celoss += ce_loss.item()
 
         _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
 
         desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
                  train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
+
 
 def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, gpu):
     global best_acc
@@ -193,8 +197,8 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, gpu):
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
 
-            pseudo_output = net(adv_inputs)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
+            adv_output = net(adv_inputs)
+            _ = get_onehot(adv_output, targets)
 
             inst_feature = z_net(adv_feature - cln_feature)
             cln_feature = net(inputs, pop=True)
@@ -204,12 +208,12 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, gpu):
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            loss = criterion(causal_output, pseudo_predicted)
+            loss = criterion(causal_output, targets)
 
         test_loss += loss.item()
         _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
 
         desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
@@ -234,7 +238,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, gpu):
             os.mkdir('checkpoint/pretrain')
 
         if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_norecon_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
@@ -248,7 +252,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
 
     print("Use GPU: {} for training".format(gpu))
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12357'
+    os.environ['MASTER_PORT'] = '12356'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
     torch.cuda.set_device(gpu)
 
@@ -284,10 +288,10 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'imagenet':
         print('Fast FGSM training')
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps)
     else:
         print('PGD training')
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps, dataset=args.dataset)
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
     # c_optimizer = optim.SGD(c_net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
