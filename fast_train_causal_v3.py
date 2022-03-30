@@ -282,7 +282,7 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     #Load backbone network parameters
     print('==> Loading Backbone checkpoint..')
     assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+    checkpoint = torch.load('checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader

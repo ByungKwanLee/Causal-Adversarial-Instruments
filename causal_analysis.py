@@ -65,7 +65,7 @@ print('==> Loading Plain checkpoint..')
 assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
 
 # Loading checkpoint
-net_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_variation_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
@@ -91,7 +91,7 @@ def test():
         args.attack = attack_name
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
                                                    eps=args.eps, steps=args.steps,
-                                                   dataset=args.dataset) \
+                                                   ) \
             if attack_name != 'Plain' else None
 
 
@@ -141,7 +141,7 @@ def visualizaition():
         save_dir = './results/feature_vis/causal_vis_' + str(args.dataset) + '_' + str(args.network)
 
     check_dir(save_dir)
-    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
+    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:

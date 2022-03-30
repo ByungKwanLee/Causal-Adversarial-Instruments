@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str) #imagenet cifar10 svhn tiny
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='plain', type=str)
+parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 
@@ -61,7 +61,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 if args.base == 'plain':
     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 else:
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_variation_%s%s_best.t7' % (
     args.dataset, args.dataset, args.base, args.network, args.depth)
 
 print("This analysis : {}".format(checkpoint_name))
@@ -132,7 +132,7 @@ def visualizaition():
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
-    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps,  dataset=args.dataset)
+    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
