@@ -49,12 +49,12 @@ print_configuration(args)
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
 # init dataloader
-_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, gpu=args.gpu, dist=False)
+_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False)
 
 # init model
-net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=int(args.gpu), pretrained=args.pretrained)
-c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=int(args.gpu), pretrained=None)
-z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, gpu=int(args.gpu), pretrained=None, exo=True, exo_net=args.network)
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, pretrained=args.pretrained)
+c_net = get_network(network='causal', depth=None, dataset=args.dataset, pretrained=None)
+z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, pretrained=None, exo=True, exo_net=args.network)
 
 net = net.cuda()
 c_net = c_net.cuda()

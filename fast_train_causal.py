@@ -71,13 +71,11 @@ counter = 0
 log_dir = args.log_dir + '/'
 check_dir(log_dir)
 
-def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, rank, writer):
+def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler, attack, rank, writer):
     global counter
-
     net.eval()
     c_net.train()
     z_net.train()
-    m_net.train()
     train_closs = 0
     train_zloss = 0
     train_celoss = 0
@@ -85,9 +83,6 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
     total = 0
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
-
-    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
-    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[20, 40, 60], gamma=0.5)
 
     desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
             (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0, correct, total))
@@ -108,24 +103,22 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         # Accerlating forward propagation
         with autocast():
             adv_feature = net(adv_inputs, pop=True)
-            pseudo_output = net(adv_feature, int=True)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
             cln_feature = net(inputs, pop=True)
-            res_feature = adv_feature - cln_feature
 
-            inst_v = m_net(adv_inputs - inputs)
+            adv_output = net(adv_feature, int=True)
+            onehot_target = get_onehot(adv_output, targets)
 
-            treat_feature = cln_feature + inst_v
+            inst_feature = z_net(adv_feature - cln_feature)
+            inst_output = net(inst_feature, int=True)
+
+            treat_feature = cln_feature + inst_feature
 
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            inst_feature = z_net(inst_v)
-            inst_output = net(inst_feature, int=True)
-
             recon_loss = ((causal_feature - adv_feature) ** 2).mean()
 
-            causal_loss = ((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
+            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -135,17 +128,12 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
-            inst_v = m_net(adv_inputs - inputs)
-            treat_feature = cln_feature + inst_v
-
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            inst_feature = z_net(inst_v)
-            inst_output = net(inst_feature, int=True)
-
-            inst_loss = -1. * (((pseudo_label - softmax(causal_output)) * softmax(inst_output)).mean())
-            ce_loss = criterion(causal_output, pseudo_predicted) # For XE loss checking
+            inst_loss = -1. * (((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean())
+            ce_loss = criterion(causal_output, targets)  # For XE loss checking
+            ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
             
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()
@@ -154,7 +142,9 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         if rank == 0:
             writer.add_scalar('Train/causal_loss', causal_loss, counter)
             writer.add_scalar('Train/inst_loss', inst_loss, counter)
-            writer.add_scalar('Train/ce_loss', ce_loss, counter)
+            writer.add_scalar('Train/causlXE_loss', ce_loss, counter)
+            writer.add_scalar('Train/instXE_loss', ce_loss2, counter)
+            writer.add_scalar('Train/recon_loss', recon_loss, counter)
             writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
             counter += 1
 
@@ -163,20 +153,19 @@ def causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst
         train_celoss += ce_loss.item()
 
         _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
 
         desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
                  train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, rank):
+def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
     global best_acc
     net.eval()
     c_net.eval()
     z_net.eval()
-    m_net.eval()
 
     test_loss = 0
     correct = 0
@@ -192,23 +181,23 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
 
         # Accerlating forward propagation
         with autocast():
-            pseudo_output = net(adv_inputs)
-            pseudo_label, pseudo_predicted = get_pseudo(pseudo_output)
-
-            inst_v = m_net(adv_inputs - inputs)
+            adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
 
-            treat_feature = cln_feature + inst_v
+            inst_feature = z_net(adv_feature - cln_feature)
+            cln_feature = net(inputs, pop=True)
+
+            treat_feature = cln_feature + inst_feature
 
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            loss = criterion(causal_output, pseudo_predicted)
+            loss = criterion(causal_output, targets)
 
         test_loss += loss.item()
         _, predicted = causal_output.max(1)
-        total += pseudo_predicted.size(0)
-        correct += predicted.eq(pseudo_predicted).sum().item()
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
 
         desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
@@ -220,7 +209,8 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
 
     if pseudo_acc > best_acc:
         state = {
-            'net': net.state_dict(),
+            'c_net': c_net.state_dict(),
+            'z_net': z_net.state_dict(),
             'acc': pseudo_acc,
             'epoch': epoch,
             'loss': loss,
@@ -233,7 +223,7 @@ def causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, 
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_rnew_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -300,10 +290,13 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # tensorboard writer
     writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
 
+    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
+    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[20, 40, 60], gamma=0.5)
+
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
-        causal_train(epoch, net, c_net, z_net, m_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, rank, writer)
-        causal_test(epoch, net, c_net, z_net, m_net, testloader, criterion, attack, rank)
+        causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler, attack, rank, writer)
+        causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
 
     # destroy process
     dist.destroy_process_group()
