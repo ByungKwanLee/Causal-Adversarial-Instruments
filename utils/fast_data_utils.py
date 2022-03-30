@@ -68,10 +68,10 @@ def save_data_for_beton(dataset, root='../data'):
             writer.from_indexed_dataset(ds)
 
 
-def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_workers=20, dist=True):
-    this_device = 'cuda:'+str(gpu)
+def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True):
 
-    img_size = 0
+    gpu = torch.cuda.current_device()
+
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465])*255
         img_size = 32
@@ -101,11 +101,11 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
             else:
                 image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((img_size, img_size), 1)]
 
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(torch.device(this_device), non_blocking=True)]
+            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(f'cuda:{gpu}', non_blocking=True)]
 
             image_pipeline.extend([
                 ToTensor(),
-                ToDevice_modified(torch.device(this_device), non_blocking=True),
+                ToDevice_modified(f'cuda:{gpu}', non_blocking=True),
                 ToTorchImage(),
                 Normalize_and_Convert(torch.float16, True)
             ])
@@ -126,7 +126,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
         loaders = {}
         for name in ['train', 'test']:
             image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(torch.device(this_device)), Squeeze()]
+            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(f'cuda:{gpu}'), Squeeze()]
             if name == 'train':
                 image_pipeline.extend([
                     RandomHorizontalFlip(),
@@ -134,7 +134,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, gpu, num_wor
                 ])
             image_pipeline.extend([
                 ToTensor(),
-                ToDevice_modified(torch.device(this_device), non_blocking=True),
+                ToDevice_modified(f'cuda:{gpu}', non_blocking=True),
                 ToTorchImage(),
                 Normalize_and_Convert(torch.float16, True)
             ])

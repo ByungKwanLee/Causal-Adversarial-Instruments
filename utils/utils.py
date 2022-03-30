@@ -10,6 +10,15 @@ from PIL import Image, ImageDraw, ImageFont
 
 selectedFont = ImageFont.truetype(os.path.join('usr/share/fonts/', 'NanumGothic.ttf'), size=15)
 
+
+def do_freeze(net):
+    for params in net.parameters():
+        params.requires_grad = False
+
+def rprint(str, rank):
+    if rank==0:
+        print(str)
+
 def set_random(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -217,18 +226,17 @@ def makedirs(filename):
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
 
-def print_configuration(args):
+def print_configuration(args, rank):
     dict = vars(args)
-    print('------------------Configurations------------------')
-    for key in dict.keys():
-        print("{}: {}".format(key, dict[key]))
-    print('-------------------------------------------------')
+    if rank == 0:
+        print('------------------Configurations------------------')
+        for key in dict.keys():
+            print("{}: {}".format(key, dict[key]))
+        print('-------------------------------------------------')
 
 def KLDivergence(q, p):
     kld = q * (q / p).log()
     return kld.sum(dim=1)
-
-from pprint import pprint
 
 class StairCaseLRScheduler(object):
     def __init__(self, start_at, interval, decay_rate):
@@ -260,8 +268,6 @@ class PresetLRScheduler(object):
         # decay_schedule is a dictionary
         # which is for specifying iteration -> lr
         self.decay_schedule = decay_schedule
-        print('=> Using a preset learning rate schedule:')
-        pprint(decay_schedule)
         self.for_once = True
 
     def __call__(self, optimizer, iteration):
@@ -279,11 +285,10 @@ class PresetLRScheduler(object):
 # attack loader
 from attack.fastattack import attack_loader
 from tqdm import tqdm
-def test_robustness(net, testloader, criterion, attack_list, gpu):
+def test_robustness(net, testloader, criterion, attack_list, rank):
     net.eval()
     test_loss = 0
 
-    attack_score = []
     attack_module = {}
     for attack_name in attack_list:
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
@@ -292,9 +297,9 @@ def test_robustness(net, testloader, criterion, attack_list, gpu):
     for key in attack_module:
         total = 0
         correct = 0
-        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
         for batch_idx, (inputs, targets) in prog_bar:
-            inputs, targets = inputs.to(gpu), targets.to(gpu)
+            inputs, targets = inputs.cuda(), targets.cuda()
             if key != 'Plain':
                 inputs = attack_module[key](inputs, targets)
             outputs = net(inputs)
@@ -314,10 +319,4 @@ def test_robustness(net, testloader, criterion, attack_list, gpu):
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 
-        attack_score.append(100. * correct / total)
-
-    print('\n----------------Summary----------------')
-    print(30, ' steps attack')
-    for key, score in zip(attack_module, attack_score):
-        print(str(key), ' : ', str(score) + '(%)')
-    print('---------------------------------------\n')
+        rprint(f'{key}: {100. * correct / total}', rank)

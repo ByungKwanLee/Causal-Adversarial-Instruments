@@ -2,14 +2,12 @@
 from __future__ import print_function
 
 # Built-in module
-import os
 import argparse
 import warnings
 warnings.filterwarnings(action='ignore')
 
 # torch pkg
 import torch
-import torchvision
 import torch.nn as nn
 import torch.optim as optim
 import torch.distributed as dist
@@ -18,9 +16,6 @@ import torch.distributed as dist
 torch.backends.cudnn.benchmark = True
 torch.autograd.profiler.emit_nvtx(False)
 torch.autograd.profiler.profile(False)
-
-# tqdm
-from tqdm import tqdm
 
 # Import Custom Utils
 from utils.fast_network_utils import get_network
@@ -36,21 +31,22 @@ parser = argparse.ArgumentParser()
 
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--test_batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=256, type=float)
 parser.add_argument('--epoch', default=60, type=int)
 args = parser.parse_args()
 
-# the number of gpus for multi process
-ngpus_per_node = len(args.gpu.split(','))
+# the number of gpus for multi-process
+gpu_list = list(map(int, args.gpu.split(',')))
+ngpus_per_node = len(gpu_list)
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -71,8 +67,7 @@ criterion = nn.CrossEntropyLoss()
 scaler = GradScaler()
 
 
-def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, gpu):
-    print('\nEpoch: %d' % epoch)
+def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler):
     net.train()
     train_loss = 0
     correct = 0
@@ -81,20 +76,20 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, g
     # Resize only for ImageNet
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=65, start_ramp=76)
 
+    # scheduling learning rate
     lr_scheduler(optimizer, epoch)
-    desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
 
+    desc = ('[Train/LR=%s] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
+                (lr_scheduler.get_lr(optimizer), 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.to(gpu), targets.to(gpu)
+        inputs, targets = inputs.cuda(), targets.cuda()
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
 
-        optimizer.zero_grad()
-
         # Accerlating forward propagation
+        optimizer.zero_grad()
         with autocast():
             outputs = net(inputs)
             loss = criterion(outputs, targets)
@@ -109,24 +104,26 @@ def train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, g
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+        desc = ('[Train/LR=%s] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
                 (lr_scheduler.get_lr(optimizer), train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
 
 
-def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu):
+def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, rank):
+
     global best_acc
+
     net.eval()
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Train/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
 
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
+    desc = ('[Train/LR=%s] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
+            (lr_scheduler.get_lr(optimizer), 0, 0, correct, total))
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.to(gpu), targets.to(gpu)
+        inputs, targets = inputs.cuda(), targets.cuda()
 
         # Accerlating forward propagation
         with autocast():
@@ -138,16 +135,16 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/LR=%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        desc = ('[Test/LR=%s] Loss: %.2f | Acc: %.2f%% (%d/%d)'
                 % (lr_scheduler.get_lr(optimizer), test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save checkpoint.
     acc = 100.*correct/total
 
+    rprint('Current Accuracy is {:.2f}!!'.format(acc), rank)
 
     if acc > best_acc:
-        print('Saving..')
         state = {
             'net': net.state_dict(),
             'acc': acc,
@@ -160,49 +157,52 @@ def test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu):
         if not os.path.isdir('checkpoint/pretrain'):
             os.mkdir('checkpoint/pretrain')
 
-        if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
+        best_acc = acc
+        if rank == 0:
             torch.save(state, './checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                         args.network,
-                                                                         args.depth))
-            print('./checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                         args.network,
-                                                                         args.depth))
-            best_acc = acc
+                                                                            args.network,
+                                                                            args.depth))
+            print('Saving~ ./checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
+                                                                args.network,
+                                                                args.depth))
 
-def main_worker(gpu, ngpus_per_node=ngpus_per_node):
+def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
-    if int(args.gpu.split(',')[gpu]) == int(args.gpu.split(',')[0]):
-        # Printing configurations
-        print_configuration(args)
-        print('==> Making model..')
+    # print configuration
+    print_configuration(args, rank)
 
-    print("Use GPU: {} for training".format(gpu))
+    # setting gpu id of this process
+    torch.cuda.set_device(rank)
+
+    # DDP environment settings
+    print("Use GPU: {} for training".format(gpu_list[rank]))
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
-    dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=gpu)
-    torch.cuda.set_device(gpu)
+    dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
-                      dataset=args.dataset,
-                      gpu=gpu)
-    net = net.to(memory_format=torch.channels_last).to(gpu)
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
+                      dataset=args.dataset)
+    net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
+    net = net.to(memory_format=torch.channels_last).cuda()
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
     # fast dataloader
     trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
-                                                  test_batch_size=args.test_batch_size, gpu=gpu)
+                                                  test_batch_size=args.test_batch_size)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
 
     # training and testing
     for epoch in range(args.epoch):
-        train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler, gpu)
-        test(epoch, net, testloader, optimizer, criterion, lr_scheduler, gpu)
+        rprint('\nEpoch: %d' % epoch, rank)
+        train(epoch, net, trainloader, optimizer, criterion, lr_scheduler, scaler)
+        test(epoch, net, testloader, optimizer, criterion, lr_scheduler, rank)
 
+    # destroy process
     dist.destroy_process_group()
 
 
