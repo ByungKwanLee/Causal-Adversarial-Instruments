@@ -42,9 +42,6 @@ parser.add_argument('--f_type', default='combine', type=str, help='option: posne
 
 args = parser.parse_args()
 
-# Printing configurations
-print_configuration(args)
-
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
@@ -65,7 +62,7 @@ print('==> Loading Plain checkpoint..')
 assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
 
 # Loading checkpoint
-net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_variation_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
@@ -82,7 +79,9 @@ criterion = nn.CrossEntropyLoss()
 
 def test():
     net.eval()
-    test_loss = 0
+    c_net.eval()
+    z_net.eval()
+    test_loss, causal_test_loss, inst_test_loss, treat_test_loss = 0, 0, 0, 0
 
     attack_score = []
     attack_module = {}
@@ -91,28 +90,44 @@ def test():
         args.attack = attack_name
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
                                                    eps=args.eps, steps=args.steps,
-                                                   ) \
-            if attack_name != 'Plain' else None
-
+                                                   )
 
     for key in attack_module:
         total = 0
-        correct = 0
+        adv_correct, causal_correct, inst_correct, treat_correct = 0, 0 ,0, 0
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
         for batch_idx, (inputs, targets) in prog_bar:
             inputs, targets = inputs.cuda(), targets.cuda()
-            if key != 'Plain':
-                inputs = attack_module[key](inputs, targets)
-            outputs = net(inputs)
-            loss = criterion(outputs, targets)
+            adv_inputs = attack_module[key](inputs, targets)
 
-            test_loss += loss.item()
-            _, predicted = outputs.max(1)
+            adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
+
+            adv_output = net(adv_feature, int=True)
+
+            inst_feature = z_net(adv_feature - cln_feature)
+            inst_output = net(inst_feature, int=True)
+
+            treat_feature = cln_feature + inst_feature
+            treat_output = net(treat_feature, int=True)
+
+            causal_feature = c_net(treat_feature)
+            causal_output = net(causal_feature, int=True)
+
+            _, adv_predicted = adv_output.max(1)
+            _, inst_predicted = inst_output.max(1)
+            _, treat_predicted = treat_output.max(1)
+            _, causal_predicted = causal_output.max(1)
+
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            adv_correct += adv_predicted.eq(targets).sum().item()
+            inst_correct += inst_predicted.eq(targets).sum().item()
+            treat_correct += treat_predicted.eq(targets).sum().item()
+            causal_correct += causal_predicted.eq(targets).sum().item()
 
-            desc = ('[Test/%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                    % (key, test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+            desc = ('[Test/%s] Adv_Acc: %.3f%% | Inst_Acc:  %.3f%%| Treat_Acc:  %.3f%% | Causal_Acc:  %.3f%%'
+                    % (key, 100. * adv_correct / total, 100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total))
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
@@ -120,13 +135,13 @@ def test():
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 
-        attack_score.append(100. * correct / total)
-
-    print('\n----------------Summary----------------')
-    print(args.steps, ' steps attack')
-    for key, score in zip(attack_module, attack_score):
-        print(str(key), ' : ', str(score) + '(%)')
-    print('---------------------------------------\n')
+    #     attack_score.append(100. * correct / total)
+    #
+    # print('\n----------------Summary----------------')
+    # print(args.steps, ' steps attack')
+    # for key, score in zip(attack_module, attack_score):
+    #     print(str(key), ' : ', str(score) + '(%)')
+    # print('---------------------------------------\n')
 
 def visualizaition():
     net.eval()
@@ -220,6 +235,7 @@ if __name__ == '__main__':
     set_random(777)
     #net_visualize()
     visualizaition()
+    #test()
 
 
 
