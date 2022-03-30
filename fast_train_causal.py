@@ -154,6 +154,9 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
 
         total += targets.size(0)
         adv_correct += adv_predicted.eq(targets).sum().item()
+        inst_correct += inst_predicted.eq(targets).sum().item()
+        treat_correct += treat_predicted.eq(targets).sum().item()
+        causal_correct += causal_predicted.eq(targets).sum().item()
 
         desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 100. * adv_correct / total,
