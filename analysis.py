@@ -61,7 +61,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 if args.base == 'plain':
     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 else:
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_variation_%s%s_best.t7' % (
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
     args.dataset, args.dataset, args.base, args.network, args.depth)
 
 print("This analysis : {}".format(checkpoint_name))
