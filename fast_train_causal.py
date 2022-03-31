@@ -76,16 +76,14 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
     net.eval()
     c_net.train()
     z_net.train()
-    train_closs = 0
-    train_zloss = 0
-    train_celoss = 0
-    correct = 0
+
+    adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
     total = 0
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
 
-    desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0, correct, total))
+    desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+            (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -112,13 +110,14 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             inst_output = net(inst_feature, int=True)
 
             treat_feature = cln_feature + inst_feature
+            treat_output = net(treat_feature, int=True)
 
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
             recon_loss = ((causal_feature - adv_feature) ** 2).mean()
 
-            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
+            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean()# + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -148,17 +147,21 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
             counter += 1
 
-        train_closs += causal_loss.item()
-        train_zloss += inst_loss.item()
-        train_celoss += ce_loss.item()
+        _, adv_predicted = adv_output.max(1)
+        _, inst_predicted = inst_output.max(1)
+        _, treat_predicted = treat_output.max(1)
+        _, causal_predicted = causal_output.max(1)
 
-        _, predicted = causal_output.max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        adv_correct += adv_predicted.eq(targets).sum().item()
+        inst_correct += inst_predicted.eq(targets).sum().item()
+        treat_correct += treat_predicted.eq(targets).sum().item()
+        causal_correct += causal_predicted.eq(targets).sum().item()
 
-        desc = ('[Train/C_LR=%s/Z_LR=%s] CELoss: %.3f | CLoss: %.3f | ZLoss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], train_celoss / (batch_idx + 1),
-                 train_closs / (batch_idx + 1), train_zloss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+                (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 100. * adv_correct / total,
+                 100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total))
+
         prog_bar.set_description(desc, refresh=True)
 
 def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
@@ -257,12 +260,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     z_net = z_net.to(memory_format=torch.channels_last).cuda()
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
 
-    m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        pretrained=None, exo=False, exo_net=args.network)
-    m_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(m_net)
-    m_net = m_net.to(memory_format=torch.channels_last).cuda()
-    m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[rank], output_device=[rank])
-
     # fast init dataloader
     trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
@@ -282,7 +279,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
-    c_optimizer = optim.AdamW([{'params': c_net.parameters()}, {'params': m_net.parameters()}], lr=args.learning_rate,
+    c_optimizer = optim.AdamW([{'params': c_net.parameters()}], lr=args.learning_rate,
                               betas=(0.5, 0.999), weight_decay=1e-4)
     inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate,
                                betas=(0.5, 0.999), weight_decay=1e-4)
