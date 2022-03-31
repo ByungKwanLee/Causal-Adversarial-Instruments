@@ -30,8 +30,6 @@ class VGG(nn.Module):
 
     def forward(self, x: torch.Tensor, int: bool=False, pop: bool=False) -> torch.Tensor:
         if int:
-            print(x.max(), x.min())
-
             for ind, f in enumerate(self.features[42:]):
                 x = f(x)
 
