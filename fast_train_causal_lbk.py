@@ -29,11 +29,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='1,2,3,4', type=str)
+parser.add_argument('--port', default='12356', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 # learning parameter
@@ -57,6 +58,8 @@ ngpus_per_node = len(gpu_list)
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = args.port
 
 # global best_acc
 best_acc = 0
@@ -80,11 +83,12 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
     z_net.train()
 
     adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
+    recon_loss = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
+    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
 
-    desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+    desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%%' %
             (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
@@ -102,11 +106,11 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         with autocast():
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
+            residual = adv_feature - cln_feature
 
             adv_output = net(adv_feature.clone().detach(), int=True)
-            onehot_target = get_onehot(adv_output, targets)
 
-            inst_feature = z_net(adv_feature - cln_feature)
+            inst_feature = z_net(residual)
             inst_output = net(inst_feature.clone(), int=True)
 
             treat_feature = cln_feature + inst_feature
@@ -115,9 +119,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature.clone(), int=True)
 
-            recon_loss = ((causal_feature - adv_feature) ** 2).mean()
-
-            causal_loss = (     (onehot_target - onehot_target * softmax(causal_output)).sum(dim=1) * (onehot_target * softmax(inst_output)).sum(dim=1)     ).mean()
+            causal_loss = F.cross_entropy(causal_output, targets) * F.cross_entropy(inst_output, targets)
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -130,7 +132,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature.clone().detach(), int=True)
 
-            inst_loss = -1. * (     (onehot_target - onehot_target * softmax(causal_output)).sum(dim=1) * (onehot_target * softmax(inst_output)).sum(dim=1)     ).mean()
+            inst_loss = - F.cross_entropy(causal_output, targets) * F.cross_entropy(inst_output, targets)
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
 
@@ -158,7 +160,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         treat_correct += treat_predicted.eq(targets).sum().item()
         causal_correct += causal_predicted.eq(targets).sum().item()
 
-        desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+        desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%%' %
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 100. * adv_correct / total,
                  100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total))
 
@@ -241,8 +243,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # DDP environment settings
     print("Use GPU: {} for training".format(gpu_list[rank]))
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
