@@ -37,7 +37,7 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 # learning parameter
-parser.add_argument('--learning_rate', default=1e-4, type=float)
+parser.add_argument('--learning_rate', default=1e-3, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -307,6 +307,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler,
                      scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
+        c_scheduler.step()
+        z_scheduler.step()
 
     # destroy process
     dist.destroy_process_group()

@@ -116,7 +116,8 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
 
             recon_loss = ((causal_feature - adv_feature.detach()) ** 2).mean()
 
-            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean()# + recon_loss
+            # causal_loss = (onehot_target - softmax(causal_output)) *  softmax(inst_output)# + recon_loss
+            causal_loss = ((onehot_target - softmax(causal_output)) @ softmax(inst_output).t()).trace() / args.batch_size# + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward()
@@ -138,7 +139,10 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            inst_loss = -1. * (((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean())
+            # inst_loss = -1. * torch.matmul((onehot_target - softmax(causal_output)), softmax(inst_output))
+
+            inst_loss =  -1. * ((onehot_target - softmax(causal_output)) @ softmax(inst_output).t()).trace() / args.batch_size
+
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
             
@@ -302,6 +306,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('\nEpoch: %d' % epoch, rank)
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
+        c_scheduler.step()
+        z_scheduler.step()
 
     # destroy process
     dist.destroy_process_group()
