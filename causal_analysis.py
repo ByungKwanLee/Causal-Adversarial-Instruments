@@ -30,7 +30,7 @@ parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=1, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -234,8 +234,8 @@ def net_visualize():
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
-    visualizaition()
-    #test()
+    #visualizaition()
+    test()
 
 
 

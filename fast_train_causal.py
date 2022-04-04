@@ -37,7 +37,7 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--pretrained', default=False, type=str2bool) # True for loading ImageNet pre-trained model
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.0001, type=float)
+parser.add_argument('--learning_rate', default=1e-4, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -96,37 +96,45 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         adv_inputs = attack(inputs, targets)
         #p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
 
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad(), net.zero_grad()
 
         # Accerlating forward propagation
         with autocast():
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
 
-            adv_output = net(adv_feature, int=True)
+            adv_output = net(adv_feature.detach(), int=True)
             onehot_target = get_onehot(adv_output, targets)
 
-            inst_feature = z_net(adv_feature - cln_feature)
+            inst_feature = z_net(adv_feature.detach() - cln_feature.detach())
             inst_output = net(inst_feature, int=True)
 
-            treat_feature = cln_feature + inst_feature
-            treat_output = net(treat_feature, int=True)
+            treat_feature = cln_feature.detach() + inst_feature
 
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
-            recon_loss = ((causal_feature - adv_feature) ** 2).mean()
+            recon_loss = ((causal_feature - adv_feature.detach()) ** 2).mean()
 
             causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean()# + recon_loss
 
         # Accerlating backward propagation
-        scaler.scale(causal_loss).backward(retain_graph=True)
+        scaler.scale(causal_loss).backward()
         scaler.step(c_optimizer)
         scaler.update()
 
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad(), net.zero_grad()
 
         with autocast():
+            adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
+
+            inst_feature = z_net(adv_feature.detach() - cln_feature.detach())
+            inst_output = net(inst_feature, int=True)
+
+            treat_feature = cln_feature.detach() + inst_feature
+            treat_output = net(treat_feature, int=True)
+
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
@@ -240,7 +248,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # DDP environment settings
     print("Use GPU: {} for training".format(gpu_list[rank]))
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12356'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
