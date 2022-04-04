@@ -46,10 +46,10 @@ print_configuration(args)
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
 # init dataloader
-_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, gpu=args.gpu, dist=False)
+_, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False)
 
 # init model
-net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=int(args.gpu))
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
 net = net.cuda()
 
 # Load Plain Network
