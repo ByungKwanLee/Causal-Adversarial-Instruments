@@ -34,7 +34,6 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool) # True for loading ImageNet pre-trained model
 
 # learning parameter
 parser.add_argument('--learning_rate', default=1e-4, type=float)
@@ -256,18 +255,18 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
-    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, pretrained=args.pretrained)
+    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
     do_freeze(net)
 
-    c_net = get_network(network='causal', depth=None, dataset=args.dataset, pretrained=None)
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset)
     c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
     c_net = c_net.to(memory_format=torch.channels_last).cuda()
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                       pretrained=None, exo=True, exo_net=args.network)
+                       exo=True, exo_net=args.network)
     z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
     z_net = z_net.to(memory_format=torch.channels_last).cuda()
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])

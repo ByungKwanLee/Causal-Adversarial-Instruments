@@ -39,7 +39,6 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -264,23 +263,23 @@ def main_worker(gpu, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(gpu)
 
     # init model and Distributed Data Parallel
-    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=gpu, pretrained=args.pretrained)
+    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, gpu=gpu)
     net = net.to(memory_format=torch.channels_last).to(gpu)
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[gpu])
     for params in net.parameters():
         params.requires_grad = False
 
-    c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu, pretrained=None)
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset, gpu=gpu)
     c_net = c_net.to(memory_format=torch.channels_last).to(gpu)
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[gpu])
 
     z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        gpu=gpu, pretrained=None, exo=True, exo_net=args.network)
+                        gpu=gpu, exo=True, exo_net=args.network)
     z_net = z_net.to(memory_format=torch.channels_last).to(gpu)
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[gpu])
 
     m_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        gpu=gpu, pretrained=None, exo=False, exo_net=args.network)
+                        gpu=gpu, exo=False, exo_net=args.network)
     m_net = m_net.to(memory_format=torch.channels_last).to(gpu)
     m_net = torch.nn.parallel.DistributedDataParallel(m_net, device_ids=[gpu])
 

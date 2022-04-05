@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from typing import Union, List, Dict, Any, cast
-from torch.hub import load_state_dict_from_url
 
 class VGG(nn.Module):
 
@@ -91,7 +90,7 @@ cfgs: Dict[int, List[Union[str, int]]] = {
 }
 
 
-def vgg(depth, dataset, mean, std, pretrained=False):
+def vgg(depth, dataset, mean, std):
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
     elif dataset == 'cifar100':
@@ -101,12 +100,4 @@ def vgg(depth, dataset, mean, std, pretrained=False):
     elif dataset == 'imagenet':
         num_classes = 1000
 
-    model = VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)
-
-    if (dataset == 'imagenet') and pretrained:
-        print("ImageNet Pretrained Model Loaded")
-        state_dict = load_state_dict_from_url("https://download.pytorch.org/models/vgg16_bn-6c64b313.pth")
-        model.load_state_dict(state_dict, strict=False)
-
-    return model
-
+    return VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)
