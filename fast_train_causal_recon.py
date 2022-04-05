@@ -34,9 +34,10 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default='12356', type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=1e-3, type=float)
+parser.add_argument('--learning_rate', default=0.0001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -47,7 +48,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
-parser.add_argument('--log_dir', type=str, default='logs_recon', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # the number of gpus for multi-process
@@ -56,6 +57,8 @@ ngpus_per_node = len(gpu_list)
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = args.port
 
 # global best_acc
 best_acc = 0
@@ -70,6 +73,7 @@ counter = 0
 log_dir = args.log_dir + '/'
 check_dir(log_dir)
 
+
 def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler,
                  attack, rank, writer):
     global counter
@@ -78,11 +82,12 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
     z_net.train()
 
     adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
+    recon_loss = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=48, start_ramp=41)
+    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
 
-    desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+    desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%%' %
             (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
@@ -92,53 +97,43 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         if args.dataset == 'imagenet':
             inputs = resize(inputs)
 
-        # epsilon = torch.empty_like(inputs).uniform_(-args.eps, args.eps).cuda()
         adv_inputs = attack(inputs, targets)
-        # p_image = torch.clamp(inputs + epsilon, min=0, max=1).detach()
 
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad(), net.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         # Accerlating forward propagation
         with autocast():
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
+            residual = adv_feature - cln_feature
 
-            adv_output = net(adv_feature.detach(), int=True)
+            adv_output = net(adv_feature.clone().detach(), int=True)
             onehot_target = get_onehot(adv_output, targets)
 
-            inst_feature = z_net(adv_feature.detach() - cln_feature.detach())
-            inst_output = net(inst_feature, int=True)
+            inst_feature = z_net(residual)
+            inst_output = net(inst_feature.clone(), int=True)
 
-            treat_feature = cln_feature.detach() + inst_feature
+            treat_feature = cln_feature + inst_feature
+            treat_output = net(treat_feature.clone().detach(), int=True)
 
             causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
+            causal_output = net(causal_feature.clone(), int=True)
 
-            recon_loss = ((causal_feature - adv_feature.detach()) ** 2).mean()
-
-            causal_loss = ((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean() + recon_loss
+            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
 
         # Accerlating backward propagation
-        scaler.scale(causal_loss).backward()
+        scaler.scale(causal_loss).backward(retain_graph=True)
         scaler.step(c_optimizer)
         scaler.update()
 
-        c_optimizer.zero_grad(), inst_optimizer.zero_grad(), net.zero_grad()
+        c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
-            adv_feature = net(adv_inputs, pop=True)
-            cln_feature = net(inputs, pop=True)
-
-            inst_feature = z_net(adv_feature.detach() - cln_feature.detach())
-            inst_output = net(inst_feature, int=True)
-
-            treat_feature = cln_feature.detach() + inst_feature
-            treat_output = net(treat_feature, int=True)
-
             causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
+            causal_output = net(causal_feature.clone().detach(), int=True)
 
-            inst_loss = -1. * (((onehot_target - softmax(causal_output)) * softmax(inst_output)).mean())
+            inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
+
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
 
@@ -166,7 +161,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         treat_correct += treat_predicted.eq(targets).sum().item()
         causal_correct += causal_predicted.eq(targets).sum().item()
 
-        desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.3f%% | Inst: %.3f%% | Treat: %.3f%% | Causal: %.3f%%' %
+        desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%%' %
                 (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 100. * adv_correct / total,
                  100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total))
 
@@ -234,7 +229,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
@@ -249,8 +244,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # DDP environment settings
     print("Use GPU: {} for training".format(gpu_list[rank]))
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
@@ -264,8 +257,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     c_net = c_net.to(memory_format=torch.channels_last).cuda()
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
 
-    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                        exo=True, exo_net=args.network)
+    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset)
     z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
     z_net = z_net.to(memory_format=torch.channels_last).cuda()
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
@@ -306,8 +298,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler,
                      scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
-        c_scheduler.step()
-        z_scheduler.step()
 
     # destroy process
     dist.destroy_process_group()

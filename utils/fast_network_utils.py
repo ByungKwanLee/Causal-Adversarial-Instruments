@@ -36,6 +36,6 @@ def get_network(network, depth, dataset, exo=False, exo_net=None):
     elif network == 'causal':
         return causal(dataset=dataset)
     elif network == 'instrument':
-        return exogenous(dataset=dataset, mean=mean, std=std, exo=exo, network=exo_net)
+        return exogenous(dataset=dataset, mean=mean, std=std)
     else:
         raise NotImplementedError
