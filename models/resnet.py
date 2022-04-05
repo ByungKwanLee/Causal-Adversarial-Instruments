@@ -2,7 +2,6 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 from typing import Type, Any, Callable, Union, List, Optional
-from torch.hub import load_state_dict_from_url
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
@@ -255,7 +254,7 @@ class ResNet(nn.Module):
     def forward(self, x: Tensor, int: bool=False, pop: bool=False) -> Tensor:
         return self._forward_impl(x, int, pop)
 
-def resnet(depth=18, dataset='imagenet', mean=None, std=None, pretrained=False):
+def resnet(depth=18, dataset='imagenet', mean=None, std=None):
 
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
@@ -283,13 +282,5 @@ def resnet(depth=18, dataset='imagenet', mean=None, std=None, pretrained=False):
     else:
         raise NotImplementedError
 
-
-    model = ResNet(block=block, layers=layers, num_classes=num_classes, mean=mean, std=std)
-
-    if ( dataset == 'imagenet') and pretrained:
-        print("ImageNet Pretrained Model Loaded")
-        state_dict = load_state_dict_from_url(url)
-        model.load_state_dict(state_dict)
-
-    return model
+    return ResNet(block=block, layers=layers, num_classes=num_classes, mean=mean, std=std)
 

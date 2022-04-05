@@ -27,7 +27,6 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--pretrained', default=False, type=str2bool)  # True for loading ImageNet pre-trained model
 
 parser.add_argument('--base', default='causal', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
@@ -49,9 +48,9 @@ os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 _, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False)
 
 # init model
-net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, pretrained=args.pretrained)
-c_net = get_network(network='causal', depth=None, dataset=args.dataset, pretrained=None)
-z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, pretrained=None, exo=True, exo_net=args.network)
+net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
+c_net = get_network(network='causal', depth=None, dataset=args.dataset)
+z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, exo=True, exo_net=args.network)
 
 net = net.cuda()
 c_net = c_net.cuda()
