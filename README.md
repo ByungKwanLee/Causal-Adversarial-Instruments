@@ -21,7 +21,17 @@ on Volta GPU architecture.
 
 ---
 
+## Hyper-Parameter Settings
 
+* [x] [standard] cifar-10/100/svhn : batchsize (128), learning rate (0.3), epoch (30)
+* [x] [AT] cifar-10/100/svhn : batchsize (128), learning rate (0.1), epoch (30)
+* [x] [standard] imagenet : batchsize (128), learning rate (0.1), epoch (30)
+* [x] [AT] imagenet : batchsize (128), learning rate (0.01), epoch (30)
+* [ ] [standard] tiny : batchsize (128), learning rate (), epoch (30)
+* [ ] [AT] tiny : batchsize (128), learning rate (), epoch (30)
+
+
+---
 
 ## Citation
 If you find this software helpful, please cite it as:
