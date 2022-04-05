@@ -34,7 +34,7 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12356', type=str)
+parser.add_argument('--port', default='12353', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -82,7 +82,6 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
     z_net.train()
 
     adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
-    recon_loss = 0
     total = 0
 
     resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
@@ -119,7 +118,9 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature.clone(), int=True)
 
-            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
+            recon_loss = ((causal_feature - adv_feature.detach()) ** 2).mean()
+
+            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean() + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -229,9 +230,9 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
+            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
 
 
