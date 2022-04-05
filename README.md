@@ -22,14 +22,23 @@ on Volta GPU architecture.
 ---
 
 ## Hyper-Parameter Settings
+### Low-dimensional dataset (CIFAR-10/SVHN/CIFAR-100)
+* [x] **[standard]** batchsize (128), learning rate (0.3), epoch (30)
+* [x] **[AT]** batchsize (128), learning rate (0.1), epoch (30)
+* [ ] **[TRADES]** batchsize (128), learning rate (), epoch (10)
+* [ ] **[MART]** batchsize (128), learning rate (), epoch (10)
+* [ ] **[GAIRAT]** batchsize (128), learning rate (), epoch (10)
 
-* [x] [standard] cifar-10/100/svhn : batchsize (128), learning rate (0.3), epoch (30)
-* [x] [AT] cifar-10/100/svhn : batchsize (128), learning rate (0.1), epoch (30)
-* [x] [standard] imagenet : batchsize (128), learning rate (0.1), epoch (30)
-* [x] [AT] imagenet : batchsize (128), learning rate (0.01), epoch (30)
-* [ ] [standard] tiny : batchsize (128), learning rate (), epoch (30)
-* [ ] [AT] tiny : batchsize (128), learning rate (), epoch (30)
+### Mid-dimensional dataset (Tiny-ImageNet)
+* [ ] **[standard]** batchsize (128), learning rate (), epoch (30)
+* [ ] **[AT]**  batchsize (128), learning rate (), epoch (30)
+* [ ] **[TRADES]** batchsize (128), learning rate (), epoch (10)
+* [ ] **[MART]** batchsize (128), learning rate (), epoch (10)
+* [ ] **[GAIRAT]** batchsize (128), learning rate (), epoch (10)
 
+### High-dimensional dataset (ImageNet)
+* [x] **[standard]** batchsize (128), learning rate (0.1), epoch (30)
+* [x] **[AT]** batchsize (128), learning rate (0.01), epoch (30)
 
 ---
 
