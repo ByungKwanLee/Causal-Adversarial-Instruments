@@ -63,7 +63,7 @@ This library is developed based on the well-known package of torchattacks [[link
 
 * Fast Gradient Sign Method ([FGSM](https://arxiv.org/abs/1412.6572))
 * Projected Gradient Descent ([PGD](https://arxiv.org/abs/1706.06083))
-* TRADES-PGD ([PGD](https://arxiv.org/pdf/1901.08573.pdf))
+* TRADES-PGD ([TPGD](https://arxiv.org/pdf/1901.08573.pdf))
 * Basic Iterative Method ([BIM](https://arxiv.org/abs/1611.01236))
 * Carlini & Wagner ([CW](https://arxiv.org/abs/1608.04644))
 * Fast Adaptive Boundary ([FAB](http://proceedings.mlr.press/v119/croce20a.html))
