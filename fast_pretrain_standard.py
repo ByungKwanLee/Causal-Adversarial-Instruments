@@ -30,11 +30,19 @@ parser = argparse.ArgumentParser()
 
 
 # model parameter
+<<<<<<< HEAD
 parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--gpu', default='2,0,1,3,4', type=str)
 parser.add_argument('--port', default='12357', type=str)
+=======
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default='12355', type=str)
+>>>>>>> dbed3e4654319ab8b1e2e147afb15f9988a35cdb
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.3, type=float)

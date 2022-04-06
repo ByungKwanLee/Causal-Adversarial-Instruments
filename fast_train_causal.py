@@ -265,8 +265,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     c_net = c_net.to(memory_format=torch.channels_last).cuda()
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
 
-    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset,
-                       exo=True, exo_net=args.network)
+    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset)
     z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
     z_net = z_net.to(memory_format=torch.channels_last).cuda()
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
