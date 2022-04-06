@@ -35,13 +35,11 @@ class FastFGSM(Attack):
             else:
                 cost = loss(outputs, labels)
 
-        # Accerlating Gradient
+        # Accelerating Gradient
         scaled_loss = self.scaler.scale(cost)
         # Update adversarial images
         grad = torch.autograd.grad(scaled_loss, adv_images,
                                    retain_graph=False, create_graph=False)[0]
-        # To efficient computation
-        # grad /= scaled_loss / cost
 
         adv_images_ = adv_images.detach() + self.eps*grad.sign()
         return torch.clamp(adv_images_, min=0, max=1).detach()
