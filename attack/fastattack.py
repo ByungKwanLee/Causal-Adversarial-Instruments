@@ -1,7 +1,6 @@
 from attack.libfastattack.FastPGD import FastPGD
 from attack.libfastattack.FastFGSM import FastFGSM
 from attack.libfastattack.FastFGSMTrain import FastFGSMTrain
-from attack.libfastattack.FastTPGD import FastTPGD
 from attack.libfastattack.FastCWLinf import FastCWLinf
 from attack.libfastattack.FastAPGD import FastAPGD
 from attack.libfastattack.FastBIM import FastBIM
@@ -21,11 +20,8 @@ def attack_loader(net, attack, eps, steps):
         return FastPGD(model=net, eps=eps,
                                 alpha=eps/steps*2.3, steps=steps, random_start=True)
 
-    elif attack == "kld_pgd":
-        return FastTPGD(model=net, eps=eps, alpha=eps/steps*2.3, steps=steps)
-
     elif attack == "cw_linf":
-        return FastCWLinf(model=net, c=0.1, lr=0.1, steps=200)
+        return FastCWLinf(model=net, eps=eps, lr=0.1, steps=100)
 
     elif attack == "apgd":
         return FastAPGD(model=net, eps=eps, loss='ce', steps=30)

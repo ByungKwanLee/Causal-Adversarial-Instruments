@@ -4,11 +4,10 @@ from torchattacks.attack import Attack
 
 class FastCWLinf(Attack):
 
-    def __init__(self, model, eps, c=0.1, kappa=0, steps=1000, lr=0.01):
+    def __init__(self, model, eps, kappa=0, steps=1000, lr=0.01):
         super().__init__("FastCWLinf", model)
         self.eps = eps
         self.alpha = eps/steps * 2.3
-        self.c = c
         self.kappa = kappa
         self.steps = steps
         self.lr = lr

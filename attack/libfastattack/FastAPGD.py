@@ -66,7 +66,7 @@ class FastAPGD(Attack):
 
     def dlr_loss(self, x, y):
         x_sorted, ind_sorted = x.sort(dim=1)
-        ind = (ind_sorted[:, -1] == y).float()
+        ind = (ind_sorted[:, -1] == y).half()
 
         return -(x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (
                     x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
@@ -234,11 +234,11 @@ class FastAPGD(Attack):
         adv = x.clone()
         with autocast():
             acc = self.model(x).max(1)[1] == y
-            loss = -1e10 * torch.ones_like(acc).float()
+            loss = -1e10 * torch.ones_like(acc).half()
         if self.verbose:
             print('-------------------------- running {}-attack with epsilon {:.4f} --------------------------'.format(
                 self.norm, self.eps))
-            print('initial accuracy: {:.2%}'.format(acc.float().mean()))
+            print('initial accuracy: {:.2%}'.format(acc.half().mean()))
         startt = time.time()
 
         if not best_loss:
@@ -261,7 +261,7 @@ class FastAPGD(Attack):
                         adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
                         if self.verbose:
                             print('restart {} - robust accuracy: {:.2%} - cum. time: {:.1f} s'.format(
-                                counter, acc.float().mean(), time.time() - startt))
+                                counter, acc.half().mean(), time.time() - startt))
 
             return acc, adv
 

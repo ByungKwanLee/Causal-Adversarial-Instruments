@@ -83,7 +83,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     criterion = nn.CrossEntropyLoss()
 
     # test
-    test_robustness(net, testloader, criterion, attack_list=['Plain', 'pgd'], rank=rank)
+    # test_robustness(net, testloader, criterion, attack_list=['Plain', 'fgsm', 'bim', 'pgd', 'kld_pgd', 'cw_linf', 'apgd', 'auto'], rank=rank)
+    test_robustness(net, testloader, criterion, attack_list=['kld_pgd', 'cw_linf', 'apgd', 'auto'], rank=rank)
 
     # destroy process
     dist.destroy_process_group()
