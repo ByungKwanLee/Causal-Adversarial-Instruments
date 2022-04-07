@@ -319,4 +319,4 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 
-        rprint(f'{key}: {100. * correct / total}', rank)
+        rprint(f'{key}: {100. * correct / total}%', rank)

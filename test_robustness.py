@@ -18,11 +18,12 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='plain', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int)
+parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--port', default='12355', type=str)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -30,11 +31,10 @@ parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
 
-# Printing configurations
-print_configuration(args)
-
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = args.port
 
 # the number of gpus for multi-process
 gpu_list = list(map(int, args.gpu.split(',')))
@@ -50,8 +50,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # DDP environment settings
     print("Use GPU: {} for training".format(gpu_list[rank]))
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
 
@@ -85,7 +83,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     criterion = nn.CrossEntropyLoss()
 
     # test
-    test_robustness(net, testloader, criterion, attack_list=['Plain'], rank=rank)
+    test_robustness(net, testloader, criterion, attack_list=['Plain', 'pgd'], rank=rank)
 
     # destroy process
     dist.destroy_process_group()
