@@ -4,13 +4,13 @@ from torchattacks.attack import Attack
 
 class FastCWLinf(Attack):
 
-    def __init__(self, model, eps, kappa=0, steps=1000, lr=0.01):
+    def __init__(self, model, eps, scale, kappa=0, steps=1000):
         super().__init__("FastCWLinf", model)
         self.eps = eps
-        self.alpha = eps/steps * 2.3
+        self.alpha = eps/steps * 3
         self.kappa = kappa
         self.steps = steps
-        self.lr = lr
+        self.scale = scale
         self._supported_mode = ['default', 'targeted']
         self.scaler = GradScaler()
 
@@ -21,11 +21,9 @@ class FastCWLinf(Attack):
 
         adv_images = images.clone().detach()
 
-
         # Starting at a uniformly random point
         adv_images = adv_images + torch.empty_like(adv_images).uniform_(-self.eps, self.eps)
         adv_images = torch.clamp(adv_images, min=0, max=1).detach()
-
 
         for step in range(self.steps):
 
@@ -34,8 +32,7 @@ class FastCWLinf(Attack):
             # Accelerating forward propagation
             with autocast():
                 outputs = self.model(adv_images)
-                f_loss = self.f(outputs, labels).sum()
-                cost = f_loss
+                cost = self.scale * self.f(outputs, labels).sum()
 
             # Update adversarial images with gradient scaler applied
             scaled_loss = self.scaler.scale(cost)

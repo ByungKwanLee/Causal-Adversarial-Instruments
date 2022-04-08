@@ -315,7 +315,7 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
-            if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
+            if (key == 'auto') or (key == 'fab'):
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 

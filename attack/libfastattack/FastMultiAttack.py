@@ -24,7 +24,6 @@ class FastMultiAttack(Attack):
         super().__init__("MultiAttack", attack.model)
         self.attacks = attacks
         self.verbose = verbose
-        self._accumulate_multi_atk_records = False
         self._multi_atk_records = [0.0]
         self._supported_mode = ['default']
 
@@ -60,65 +59,5 @@ class FastMultiAttack(Attack):
             if len(fails) == 0:
                 break
 
-        if self.verbose:
-            print(self._return_sr_record(multi_atk_records))
-
-        if self._accumulate_multi_atk_records:
-            self._update_multi_atk_records(multi_atk_records)
-
         return final_images
 
-    def _clear_multi_atk_records(self):
-        self._multi_atk_records = [0.0]
-
-    def _covert_to_success_rates(self, multi_atk_records):
-        sr = [((1 - multi_atk_records[i] / multi_atk_records[0]) * 100) for i in range(1, len(multi_atk_records))]
-        return sr
-
-    def _return_sr_record(self, multi_atk_records):
-        sr = self._covert_to_success_rates(multi_atk_records)
-        return "Attack success rate: " + " | ".join(["%2.2f %%" % item for item in sr])
-
-    def _update_multi_atk_records(self, multi_atk_records):
-        for i, item in enumerate(multi_atk_records):
-            self._multi_atk_records[i] += item
-
-    def save(self, data_loader, save_path=None, verbose=True, return_verbose=False, save_pred=False):
-        r"""
-        Overridden.
-        """
-        self._clear_multi_atk_records()
-        prev_verbose = self.verbose
-        self.verbose = False
-        self._accumulate_multi_atk_records = True
-
-        for i, attack in enumerate(self.attacks):
-            self._multi_atk_records.append(0.0)
-
-        if return_verbose:
-            rob_acc, l2, elapsed_time = super().save(data_loader, save_path,
-                                                     verbose, return_verbose,
-                                                     save_pred=save_pred)
-            sr = self._covert_to_success_rates(self._multi_atk_records)
-        elif verbose:
-            super().save(data_loader, save_path, verbose,
-                         return_verbose, save_pred=save_pred)
-            sr = self._covert_to_success_rates(self._multi_atk_records)
-        else:
-            super().save(data_loader, save_path, verbose=False,
-                         return_verbose=False, save_pred=save_pred)
-
-        self._clear_multi_atk_records()
-        self._accumulate_multi_atk_records = False
-        self.verbose = prev_verbose
-
-        if return_verbose:
-            return rob_acc, sr, l2, elapsed_time
-
-    def _save_print(self, progress, rob_acc, l2, elapsed_time, end):
-        r"""
-        Overridden.
-        """
-        print("- Save progress: %2.2f %% / Robust accuracy: %2.2f %%" % (progress, rob_acc) + \
-              " / " + self._return_sr_record(self._multi_atk_records) + \
-              ' / L2: %1.5f (%2.3f it/s) \t' % (l2, elapsed_time), end=end)

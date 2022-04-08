@@ -25,10 +25,6 @@ parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--port', default='12355', type=str)
 
-# attack parameter
-parser.add_argument('--attack', default='pgd', type=str)
-parser.add_argument('--eps', default=0.03, type=float)
-parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
 
 # GPU configurations
@@ -84,7 +80,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # test
     # test_robustness(net, testloader, criterion, attack_list=['Plain', 'fgsm', 'bim', 'pgd', 'kld_pgd', 'cw_linf', 'apgd', 'auto'], rank=rank)
-    test_robustness(net, testloader, criterion, attack_list=['kld_pgd', 'cw_linf', 'apgd', 'auto'], rank=rank)
+    test_robustness(net, testloader, criterion, attack_list=['pgd'], rank=rank)
 
     # destroy process
     dist.destroy_process_group()

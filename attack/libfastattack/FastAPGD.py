@@ -11,10 +11,9 @@ class FastAPGD(Attack):
     APGD in the paper 'Reliable evaluation of adversarial robustness with an ensemble of diverse parameter-free attacks'
     [https://arxiv.org/abs/2003.01690]
     [https://github.com/fra31/auto-attack]
-    Distance Measure : Linf, L2
+    Distance Measure : Linf
     Arguments:
         model (nn.Module): model to attack.
-        norm (str): Lp-norm of the attack. ['Linf', 'L2'] (Default: 'Linf')
         eps (float): maximum perturbation. (Default: None)
         steps (int): number of steps. (Default: 100)
         n_restarts (int): number of random restarts. (Default: 1)
@@ -22,25 +21,23 @@ class FastAPGD(Attack):
         loss (str): loss function optimized. ['ce', 'dlr'] (Default: 'ce')
         eot_iter (int): number of iteration for EOT. (Default: 1)
         rho (float): parameter for step-size update (Default: 0.75)
-        verbose (bool): print progress. (Default: False)
     Shape:
         - images: :math:`(N, C, H, W)` where `N = number of batches`, `C = number of channels`,        `H = height` and `W = width`. It must have a range [0, 1].
         - labels: :math:`(N)` where each value :math:`y_i` is :math:`0 \leq y_i \leq` `number of labels`.
         - output: :math:`(N, C, H, W)`.
     """
 
-    def __init__(self, model, norm='Linf', eps=8 / 255, steps=100, n_restarts=1,
-                 seed=0, loss='ce', eot_iter=1, rho=.75, verbose=False):
+    def __init__(self, model, eps=8 / 255, scale=0.1, steps=100, n_restarts=1,
+                 seed=0, loss='ce', eot_iter=1, rho=.75):
         super().__init__("FastAPGD", model)
         self.eps = eps
         self.steps = steps
-        self.norm = norm
+        self.scale = scale
         self.n_restarts = n_restarts
         self.seed = seed
         self.loss = loss
         self.eot_iter = eot_iter
         self.thr_decr = rho
-        self.verbose = verbose
         self._supported_mode = ['default']
         self.scaler = GradScaler()
 
@@ -66,7 +63,7 @@ class FastAPGD(Attack):
 
     def dlr_loss(self, x, y):
         x_sorted, ind_sorted = x.sort(dim=1)
-        ind = (ind_sorted[:, -1] == y).half()
+        ind = (ind_sorted[:, -1] == y).float()
 
         return -(x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (
                     x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
@@ -78,17 +75,11 @@ class FastAPGD(Attack):
         self.steps_2, self.steps_min, self.size_decr = max(int(0.22 * self.steps), 1), max(int(0.06 * self.steps),
                                                                                            1), max(
             int(0.03 * self.steps), 1)
-        if self.verbose:
-            print('parameters: ', self.steps, self.steps_2, self.steps_min, self.size_decr)
 
-        if self.norm == 'Linf':
-            t = 2 * torch.rand(x.shape).to(self.device).detach() - 1
-            x_adv = x.detach() + self.eps * torch.ones([x.shape[0], 1, 1, 1]).to(self.device).detach() * t / (
-                t.reshape([t.shape[0], -1]).abs().max(dim=1, keepdim=True)[0].reshape([-1, 1, 1, 1]))
-        elif self.norm == 'L2':
-            t = torch.randn(x.shape).to(self.device).detach()
-            x_adv = x.detach() + self.eps * torch.ones([x.shape[0], 1, 1, 1]).to(self.device).detach() * t / (
-                        (t ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12)
+        t = 2 * torch.rand(x.shape).to(self.device).detach() - 1
+        x_adv = x.detach() + self.eps * torch.ones([x.shape[0], 1, 1, 1]).to(self.device).detach() * t / (
+            t.reshape([t.shape[0], -1]).abs().max(dim=1, keepdim=True)[0].reshape([-1, 1, 1, 1]))
+
         x_adv = x_adv.clamp(0., 1.)
         x_best = x_adv.clone()
         x_best_adv = x_adv.clone()
@@ -110,13 +101,13 @@ class FastAPGD(Attack):
                 # Accelerating forward propagation
                 with autocast():
                     logits = self.model(x_adv)  # 1 forward pass (eot_iter = 1)
-                    loss_indiv = criterion_indiv(logits, y)
+                    loss_indiv = self.scale * criterion_indiv(logits, y)
                     loss = loss_indiv.sum()
 
                 # Update adversarial images with gradient scaler applied
                 scaled_loss = self.scaler.scale(loss)
 
-            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach() / (scaled_loss / loss)  # 1 backward pass (eot_iter = 1)
+            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach()  # 1 backward pass (eot_iter = 1)
 
         grad /= float(self.eot_iter)
         grad_best = grad.clone()
@@ -146,24 +137,11 @@ class FastAPGD(Attack):
 
                 a = 0.75 if i > 0 else 1.0
 
-                if self.norm == 'Linf':
-                    x_adv_1 = x_adv + step_size * torch.sign(grad)
-                    x_adv_1 = torch.clamp(torch.min(torch.max(x_adv_1, x - self.eps), x + self.eps), 0.0, 1.0)
-                    x_adv_1 = torch.clamp(
-                        torch.min(torch.max(x_adv + (x_adv_1 - x_adv) * a + grad2 * (1 - a), x - self.eps),
-                                  x + self.eps), 0.0, 1.0)
-
-                elif self.norm == 'L2':
-                    x_adv_1 = x_adv + step_size * grad / ((grad ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12)
-                    x_adv_1 = torch.clamp(x + (x_adv_1 - x) / (
-                                ((x_adv_1 - x) ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12) * torch.min(
-                        self.eps * torch.ones(x.shape).to(self.device).detach(),
-                        ((x_adv_1 - x) ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt()), 0.0, 1.0)
-                    x_adv_1 = x_adv + (x_adv_1 - x_adv) * a + grad2 * (1 - a)
-                    x_adv_1 = torch.clamp(x + (x_adv_1 - x) / (
-                                ((x_adv_1 - x) ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12) * torch.min(
-                        self.eps * torch.ones(x.shape).to(self.device).detach(),
-                        ((x_adv_1 - x) ** 2).sum(dim=(1, 2, 3), keepdim=True).sqrt() + 1e-12), 0.0, 1.0)
+                x_adv_1 = x_adv + step_size * torch.sign(grad)
+                x_adv_1 = torch.clamp(torch.min(torch.max(x_adv_1, x - self.eps), x + self.eps), 0.0, 1.0)
+                x_adv_1 = torch.clamp(
+                    torch.min(torch.max(x_adv + (x_adv_1 - x_adv) * a + grad2 * (1 - a), x - self.eps),
+                              x + self.eps), 0.0, 1.0)
 
                 x_adv = x_adv_1 + 0.
 
@@ -175,12 +153,12 @@ class FastAPGD(Attack):
                     # Accelerating forward propagation
                     with autocast():
                         logits = self.model(x_adv)  # 1 forward pass (eot_iter = 1)
-                        loss_indiv = criterion_indiv(logits, y)
+                        loss_indiv = self.scale * criterion_indiv(logits, y)
                         loss = loss_indiv.sum()
                     # Update adversarial images with gradient scaler applied
                     scaled_loss = self.scaler.scale(loss)
 
-                grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach() / (scaled_loss / loss)  # 1 backward pass (eot_iter = 1)
+                grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach()  # 1 backward pass (eot_iter = 1)
 
             grad /= float(self.eot_iter)
 
@@ -188,8 +166,7 @@ class FastAPGD(Attack):
             acc = torch.min(acc, pred)
             acc_steps[i + 1] = acc + 0
             x_best_adv[(pred == 0).nonzero().squeeze()] = x_adv[(pred == 0).nonzero().squeeze()] + 0.
-            if self.verbose:
-                print('iteration: {} - Best loss: {:.6f}'.format(i, loss_best.sum()))
+
 
             ### check step size
             with torch.no_grad():
@@ -227,18 +204,14 @@ class FastAPGD(Attack):
         return x_best, acc, loss_best, x_best_adv
 
     def perturb(self, x_in, y_in, best_loss=False, cheap=True):
-        assert self.norm in ['Linf', 'L2']
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
 
         adv = x.clone()
+        # Accelerating forward propagation
         with autocast():
             acc = self.model(x).max(1)[1] == y
-            loss = -1e10 * torch.ones_like(acc).half()
-        if self.verbose:
-            print('-------------------------- running {}-attack with epsilon {:.4f} --------------------------'.format(
-                self.norm, self.eps))
-            print('initial accuracy: {:.2%}'.format(acc.half().mean()))
+
         startt = time.time()
 
         if not best_loss:
@@ -258,10 +231,8 @@ class FastAPGD(Attack):
                         ind_curr = (acc_curr == 0).nonzero().squeeze()
                         #
                         acc[ind_to_fool[ind_curr]] = 0
-                        adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
-                        if self.verbose:
-                            print('restart {} - robust accuracy: {:.2%} - cum. time: {:.1f} s'.format(
-                                counter, acc.half().mean(), time.time() - startt))
+                        adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone().half()
+
 
             return acc, adv
 
@@ -274,7 +245,5 @@ class FastAPGD(Attack):
                 adv_best[ind_curr] = best_curr[ind_curr] + 0.
                 loss_best[ind_curr] = loss_curr[ind_curr] + 0.
 
-                if self.verbose:
-                    print('restart {} - loss: {:.5f}'.format(counter, loss_best.sum()))
 
             return loss_best, adv_best
