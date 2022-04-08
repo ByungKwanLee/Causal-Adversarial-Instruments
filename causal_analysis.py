@@ -50,7 +50,7 @@ _, testloader = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, te
 # init model
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
 c_net = get_network(network='causal', depth=None, dataset=args.dataset)
-z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, exo=True, exo_net=args.network)
+z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset)
 
 net = net.cuda()
 c_net = c_net.cuda()
@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_recon_reg_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -152,7 +152,7 @@ def visualizaition():
     elif args.base == 'adv':
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
     else:
-        save_dir = './results/feature_vis/causal_vis_' + str(args.dataset) + '_' + str(args.network)
+        save_dir = './results/feature_vis/causal_recon_reg_vis_' + str(args.dataset) + '_' + str(args.network)
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)

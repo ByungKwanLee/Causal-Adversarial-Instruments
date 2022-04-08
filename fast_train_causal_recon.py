@@ -133,7 +133,9 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature.clone().detach(), int=True)
 
-            inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
+            reg = (inst_output ** 2).mean()
+
+            inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean() + reg
 
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
@@ -230,7 +232,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_recon_reg_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
