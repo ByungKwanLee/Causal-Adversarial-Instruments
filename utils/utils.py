@@ -292,7 +292,7 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
     attack_module = {}
     for attack_name in attack_list:
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
-                                                                                if attack_name != 'Plain' else None
+                                                                                if attack_name != 'plain' else None
 
     for key in attack_module:
         total = 0
@@ -300,7 +300,7 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
         for batch_idx, (inputs, targets) in prog_bar:
             inputs, targets = inputs.cuda(), targets.cuda()
-            if key != 'Plain':
+            if key != 'plain':
                 inputs = attack_module[key](inputs, targets)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
@@ -315,8 +315,8 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
-            if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
+            if (key == 'auto') or (key == 'fab'):
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 
-        rprint(f'{key}: {100. * correct / total}', rank)
+        rprint(f'{key}: {100. * correct / total}%', rank)
