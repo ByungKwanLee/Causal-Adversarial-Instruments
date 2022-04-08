@@ -66,7 +66,7 @@ This library is developed based on the well-known package of torchattacks [[link
 * TRADES-PGD ([TPGD](https://arxiv.org/pdf/1901.08573.pdf))
 * Basic Iterative Method ([BIM](https://arxiv.org/abs/1611.01236))
 * Carlini & Wagner ([CW](https://arxiv.org/abs/1608.04644))
-* Fast Adaptive Boundary ([FAB](http://proceedings.mlr.press/v119/croce20a.html))
+* Momentum Iterative FGSM ([MI-FGSM](https://arxiv.org/abs/1710.06081))
 * Auto-PGD ([APGD](https://arxiv.org/abs/2003.01690))
 * Auto-Attack ([AA](https://arxiv.org/abs/2003.01690))
 
