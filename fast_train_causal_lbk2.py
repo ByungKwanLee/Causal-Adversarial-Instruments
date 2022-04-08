@@ -34,10 +34,10 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12356', type=str)
+parser.add_argument('--port', default='12357', type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.0001, type=float)
+parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -133,7 +133,6 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_output = net(causal_feature.clone().detach(), int=True)
 
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
-
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
 
@@ -229,7 +228,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_001_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
