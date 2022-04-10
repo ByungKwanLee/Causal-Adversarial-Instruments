@@ -187,8 +187,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                     step_size_up=args.epoch * len(trainloader) / 2,
-                                                     step_size_down=args.epoch * len(trainloader) / 2)
+    step_size_up=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader),
+    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader))
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
