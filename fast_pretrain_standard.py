@@ -34,10 +34,10 @@ parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default='12356', type=str)
+parser.add_argument('--port', default='12355', type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.3, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -67,7 +67,7 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
     total = 0
 
     # Resize only for ImageNet
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
+    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
 
     desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], 0, 0, 0, 0))

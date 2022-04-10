@@ -46,13 +46,13 @@ def save_data_for_beton(dataset, root='../data'):
         for (name, ds) in datasets.items():
 
             writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
-                'image': RGBImageField(write_mode='jpg',
-                                       max_resolution=224,
+                'image': RGBImageField(write_mode='smart',
+                                       max_resolution=500,
                                        compress_probability=0.50,
-                                       jpeg_quality=50),
+                                       jpeg_quality=90),
                 'label': IntField(),
-            }, num_workers=96)
-            writer.from_indexed_dataset(ds, chunksize=400)
+            }, num_workers=16)
+            writer.from_indexed_dataset(ds, chunksize=100)
 
     else:
         # for small dataset
