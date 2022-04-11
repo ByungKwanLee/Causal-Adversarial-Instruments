@@ -46,9 +46,9 @@ def save_data_for_beton(dataset, root='../data'):
         for (name, ds) in datasets.items():
 
             writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
-                'image': RGBImageField(write_mode='smart',
-                                       max_resolution=500,
-                                       compress_probability=0.50,
+                'image': RGBImageField(write_mode='raw',
+                                       max_resolution=256,
+                                       compress_probability=0.5,
                                        jpeg_quality=90),
                 'label': IntField(),
             }, num_workers=16)
@@ -71,6 +71,7 @@ def save_data_for_beton(dataset, root='../data'):
 def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True):
 
     gpu = torch.cuda.current_device()
+    decoder = None
 
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465])*255
@@ -86,7 +87,11 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         img_size = 64
     if dataset == 'imagenet':
         mean = torch.tensor([0.485, 0.456, 0.406])*255
-        img_size = 224
+        img_size = 160
+        test_size = 224
+        num_workers = 80
+
+        decoder = RandomResizedCropRGBImageDecoder((img_size, img_size))
 
         paths = {
             'train': '/mnt/hard1/lbk/imagenet/imagenet_train.beton',
@@ -96,10 +101,10 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         loaders = {}
         for name in ['train', 'test']:
             if name == 'train':
-                image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((img_size, img_size)),
+                image_pipeline: List[Operation] = [decoder,
                                                    RandomHorizontalFlip()]
             else:
-                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((img_size, img_size), 1)]
+                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size/img_size)]
 
             label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(f'cuda:{gpu}', non_blocking=True)]
 
@@ -144,7 +149,11 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
                                 num_workers=num_workers, order=ordering, drop_last=(name == 'train'),
                                    pipelines={'image': image_pipeline, 'label': label_pipeline})
-    return loaders['train'], loaders['test']
+
+
+    return loaders['train'], loaders['test'], decoder
+
+
 
 
 

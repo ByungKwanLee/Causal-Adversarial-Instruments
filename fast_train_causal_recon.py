@@ -266,7 +266,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
 
     # fast init dataloader
-    trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 

@@ -68,18 +68,12 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler, attack):
     correct = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
-
     desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_lr()[0], 0, 0, correct, total))
-
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        if args.dataset == 'imagenet':
-            inputs = resize(inputs)
-
         inputs = attack(inputs, targets)
 
         # Accerlating forward propagation
@@ -215,7 +209,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
     # fast init dataloader
-    trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
@@ -242,6 +236,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
+        if args.dataset == "imagenet":
+            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
         train(epoch, net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(epoch, net, testloader, attack, rank)
 

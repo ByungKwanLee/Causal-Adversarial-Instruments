@@ -60,7 +60,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
 
     # init dataloader
-    _, testloader = get_fast_dataloader(dataset=args.dataset,
+    _, testloader, _ = get_fast_dataloader(dataset=args.dataset,
                                         train_batch_size=1,
                                         test_batch_size=args.batch_size)
 
