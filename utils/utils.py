@@ -190,10 +190,10 @@ def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     assert min_res <= max_res
 
     if epoch <= start_ramp:
-        return torchvision.transforms.Resize((min_res, min_res))
+        return min_res
 
     if epoch >= end_ramp:
-        return torchvision.transforms.Resize((max_res, max_res))
+        return max_res
 
     # otherwise, linearly interpolate to the nearest multiple of 32
     interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])

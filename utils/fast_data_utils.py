@@ -1,9 +1,7 @@
 from typing import List
-import numpy as np
 
 import torch
 import torchvision
-import torchvision.transforms as transforms
 
 from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
@@ -87,11 +85,13 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         img_size = 64
     if dataset == 'imagenet':
         mean = torch.tensor([0.485, 0.456, 0.406])*255
-        img_size = 160
-        test_size = 224
-        num_workers = 80
 
-        decoder = RandomResizedCropRGBImageDecoder((img_size, img_size))
+        # fixig
+        init_size = 160
+        orgin_size = 256
+        test_size = 224
+
+        decoder = RandomResizedCropRGBImageDecoder((init_size, init_size))
 
         paths = {
             'train': '/mnt/hard1/lbk/imagenet/imagenet_train.beton',
@@ -104,7 +104,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 image_pipeline: List[Operation] = [decoder,
                                                    RandomHorizontalFlip()]
             else:
-                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size/img_size)]
+                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size/orgin_size)]
 
             label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(f'cuda:{gpu}', non_blocking=True)]
 
