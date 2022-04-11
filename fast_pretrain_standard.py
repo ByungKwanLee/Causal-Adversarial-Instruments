@@ -31,15 +31,15 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default='12355', type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.3, type=float)
+parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=256, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=30, type=int)
 args = parser.parse_args()
@@ -60,7 +60,7 @@ best_acc = 0
 scaler = GradScaler()
 
 
-def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
+def train(net, trainloader, optimizer, lr_scheduler, scaler):
     net.train()
     train_loss = 0
     correct = 0
@@ -98,7 +98,7 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
 
 
 
-def test(epoch, net, testloader, lr_scheduler, rank):
+def test(net, testloader, lr_scheduler, rank):
 
     global best_acc
 
@@ -136,7 +136,6 @@ def test(epoch, net, testloader, lr_scheduler, rank):
         state = {
             'net': net.state_dict(),
             'acc': acc,
-            'epoch': epoch,
             'loss': loss,
             'args': args
         }
@@ -183,15 +182,16 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
     step_size_up=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader),
-    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader))
+    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
             decoder.output_size = (res, res)
-        train(epoch, net, trainloader, optimizer, lr_scheduler, scaler)
-        test(epoch, net, testloader, lr_scheduler, rank)
+        train(net, trainloader, optimizer, lr_scheduler, scaler)
+        test(net, testloader, lr_scheduler, rank)
 
     # destroy process
     dist.destroy_process_group()

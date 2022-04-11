@@ -44,7 +44,7 @@ def save_data_for_beton(dataset, root='../data'):
         for (name, ds) in datasets.items():
 
             writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
-                'image': RGBImageField(write_mode='raw',
+                'image': RGBImageField(write_mode='jpg',
                                        max_resolution=256,
                                        compress_probability=0.5,
                                        jpeg_quality=90),
@@ -86,7 +86,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     if dataset == 'imagenet':
         mean = torch.tensor([0.485, 0.456, 0.406])*255
 
-        # fixig
+        # fix size
         init_size = 160
         orgin_size = 256
         test_size = 224
@@ -94,8 +94,8 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         decoder = RandomResizedCropRGBImageDecoder((init_size, init_size))
 
         paths = {
-            'train': '/mnt/hard1/lbk/imagenet/imagenet_train.beton',
-            'test': '/mnt/hard1/lbk/imagenet/imagenet_test.beton'
+            'train': '/mnt/hard1/lbk/imagenet/imagenet_train_jpeg90_256_jpg.beton',
+            'test': '/mnt/hard1/lbk/imagenet/imagenet_test_jpeg90_256_jpg.beton'
         }
         # for large dataset
         loaders = {}
@@ -115,10 +115,10 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 Normalize_and_Convert(torch.float16, True)
             ])
 
-            ordering = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                   num_workers=num_workers, order=ordering, drop_last=(name == 'train'), os_cache=True,
+                                   num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
                                    distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
                                    seed = 0)
     else:
@@ -144,10 +144,10 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 Normalize_and_Convert(torch.float16, True)
             ])
 
-            ordering = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                num_workers=num_workers, order=ordering, drop_last=(name == 'train'),
+                                num_workers=num_workers, order=order, drop_last=(name == 'train'),
                                    pipelines={'image': image_pipeline, 'label': label_pipeline})
 
 

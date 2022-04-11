@@ -6,7 +6,7 @@ from torchattacks.attack import Attack
 
 class FastFGSMTrain(Attack):
 
-    def __init__(self, model, eps=0.007):
+    def __init__(self, model, eps):
         super().__init__("FastFGSMTrain", model)
         self.eps = eps
         self._supported_mode = ['default', 'targeted']

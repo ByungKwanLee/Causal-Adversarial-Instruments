@@ -38,7 +38,7 @@ on Volta GPU architecture.
 
 ### High-dimensional dataset (ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.1), epoch (30)
-* [x] **[AT]** batchsize (128), learning rate (0.01), epoch (30)
+* [x] **[AT]** batchsize (128), learning rate (0.1), epoch (30)
 
 ---
 
