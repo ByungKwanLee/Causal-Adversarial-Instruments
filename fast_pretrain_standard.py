@@ -31,9 +31,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default='12355', type=str)
 
 # learning parameter
@@ -60,14 +60,11 @@ best_acc = 0
 scaler = GradScaler()
 
 
-def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
+def train(net, trainloader, optimizer, lr_scheduler, scaler):
     net.train()
     train_loss = 0
     correct = 0
     total = 0
-
-    # Resize only for ImageNet
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
 
     desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], 0, 0, 0, 0))
@@ -75,8 +72,6 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        if args.dataset == 'imagenet':
-            inputs = resize(inputs)
 
         # Accerlating forward propagation
         optimizer.zero_grad()
@@ -103,7 +98,7 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler):
 
 
 
-def test(epoch, net, testloader, lr_scheduler, rank):
+def test(net, testloader, lr_scheduler, rank):
 
     global best_acc
 
@@ -141,7 +136,6 @@ def test(epoch, net, testloader, lr_scheduler, rank):
         state = {
             'net': net.state_dict(),
             'acc': acc,
-            'epoch': epoch,
             'loss': loss,
             'args': args
         }
@@ -180,20 +174,24 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
     # fast dataloader
-    trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                     step_size_up=args.epoch * len(trainloader) / 2,
-                                                     step_size_down=args.epoch * len(trainloader) / 2)
+    step_size_up=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader),
+    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
-        train(epoch, net, trainloader, optimizer, lr_scheduler, scaler)
-        test(epoch, net, testloader, lr_scheduler, rank)
+        if args.dataset == "imagenet":
+            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
+        train(net, trainloader, optimizer, lr_scheduler, scaler)
+        test(net, testloader, lr_scheduler, rank)
 
     # destroy process
     dist.destroy_process_group()

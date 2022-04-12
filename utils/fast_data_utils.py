@@ -1,9 +1,7 @@
 from typing import List
-import numpy as np
 
 import torch
 import torchvision
-import torchvision.transforms as transforms
 
 from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
@@ -47,12 +45,12 @@ def save_data_for_beton(dataset, root='../data'):
 
             writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
                 'image': RGBImageField(write_mode='jpg',
-                                       max_resolution=224,
-                                       compress_probability=0.50,
-                                       jpeg_quality=50),
+                                       max_resolution=256,
+                                       compress_probability=0.5,
+                                       jpeg_quality=90),
                 'label': IntField(),
-            }, num_workers=96)
-            writer.from_indexed_dataset(ds, chunksize=400)
+            }, num_workers=16)
+            writer.from_indexed_dataset(ds, chunksize=100)
 
     else:
         # for small dataset
@@ -71,6 +69,7 @@ def save_data_for_beton(dataset, root='../data'):
 def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True):
 
     gpu = torch.cuda.current_device()
+    decoder = None
 
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465])*255
@@ -86,20 +85,26 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         img_size = 64
     if dataset == 'imagenet':
         mean = torch.tensor([0.485, 0.456, 0.406])*255
-        img_size = 224
+
+        # fix size
+        init_size = 160
+        orgin_size = 256
+        test_size = 224
+
+        decoder = RandomResizedCropRGBImageDecoder((init_size, init_size))
 
         paths = {
-            'train': '/mnt/hard1/lbk/imagenet/imagenet_train.beton',
-            'test': '/mnt/hard1/lbk/imagenet/imagenet_test.beton'
+            'train': '/mnt/hard1/lbk/imagenet/imagenet_train_jpeg90_256_jpg.beton',
+            'test': '/mnt/hard1/lbk/imagenet/imagenet_test_jpeg90_256_jpg.beton'
         }
         # for large dataset
         loaders = {}
         for name in ['train', 'test']:
             if name == 'train':
-                image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((img_size, img_size)),
+                image_pipeline: List[Operation] = [decoder,
                                                    RandomHorizontalFlip()]
             else:
-                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((img_size, img_size), 1)]
+                image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size/orgin_size)]
 
             label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(f'cuda:{gpu}', non_blocking=True)]
 
@@ -110,10 +115,10 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 Normalize_and_Convert(torch.float16, True)
             ])
 
-            ordering = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                   num_workers=num_workers, order=ordering, drop_last=(name == 'train'), os_cache=True,
+                                   num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
                                    distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
                                    seed = 0)
     else:
@@ -139,12 +144,16 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 Normalize_and_Convert(torch.float16, True)
             ])
 
-            ordering = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                num_workers=num_workers, order=ordering, drop_last=(name == 'train'),
+                                num_workers=num_workers, order=order, drop_last=(name == 'train'),
                                    pipelines={'image': image_pipeline, 'label': label_pipeline})
-    return loaders['train'], loaders['test']
+
+
+    return loaders['train'], loaders['test'], decoder
+
+
 
 
 

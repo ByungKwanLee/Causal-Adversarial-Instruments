@@ -193,6 +193,21 @@ def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     assert min_res <= max_res
 
     if epoch <= start_ramp:
+        return min_res
+
+    if epoch >= end_ramp:
+        return max_res
+
+    # otherwise, linearly interpolate to the nearest multiple of 32
+    interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
+    final_res = int(np.round(interp[0] / 32)) * 32
+
+    return final_res
+
+def get_randomresizedcrop(epoch, min_res, max_res, end_ramp, start_ramp):
+    assert min_res <= max_res
+
+    if epoch <= start_ramp:
         return torchvision.transforms.Resize((min_res, min_res))
 
     if epoch >= end_ramp:
@@ -202,7 +217,8 @@ def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
     final_res = int(np.round(interp[0] / 32)) * 32
 
-    return torchvision.transforms.Resize((final_res, final_res))
+    return torchvision.transforms.RandomResizedCrop((final_res, final_res))
+
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -213,7 +229,7 @@ def str2bool(v):
         assert False
 
 def imshow(img, norm=False):
-    img = img[0].cpu().numpy()
+    img = img.cpu().numpy()
     plt.imshow(np.transpose(np.array(img / 255 if norm else img, dtype=np.float32), (1, 2, 0)))
     plt.show()
 

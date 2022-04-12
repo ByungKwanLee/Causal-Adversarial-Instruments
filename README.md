@@ -38,7 +38,7 @@ on Volta GPU architecture.
 
 ### High-dimensional dataset (ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.1), epoch (30)
-* [x] **[AT]** batchsize (128), learning rate (0.01), epoch (30)
+* [x] **[AT]** batchsize (128), learning rate (0.1), epoch (30)
 
 ---
 
@@ -62,8 +62,8 @@ This library is developed based on the well-known package of torchattacks [[link
 **Current Available Attacks Below (Under Developement)**
 
 * Fast Gradient Sign Method ([FGSM](https://arxiv.org/abs/1412.6572))
-* Projected Gradient Descent ([PGD](https://arxiv.org/abs/1706.06083))
 * Basic Iterative Method ([BIM](https://arxiv.org/abs/1611.01236))
+* Projected Gradient Descent ([PGD](https://arxiv.org/abs/1706.06083))
 * Carlini & Wagner ([CW](https://arxiv.org/abs/1608.04644))
 * Momentum Iterative FGSM ([MI-FGSM](https://arxiv.org/abs/1710.06081))
 * Auto-PGD ([APGD](https://arxiv.org/abs/2003.01690))

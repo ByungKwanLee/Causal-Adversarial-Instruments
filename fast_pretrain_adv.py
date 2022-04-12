@@ -28,7 +28,7 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
@@ -62,24 +62,18 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
     train_loss = 0
     correct = 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
-
     desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
             (lr_scheduler.get_lr()[0], 0, 0, correct, total))
-
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        if args.dataset == 'imagenet':
-            inputs = resize(inputs)
-
         inputs = attack(inputs, targets)
 
         # Accerlating forward propagation
@@ -107,7 +101,7 @@ def train(epoch, net, trainloader, optimizer, lr_scheduler, scaler, attack):
 
 
 
-def test(epoch, net, testloader, attack, rank):
+def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
     test_loss = 0
@@ -175,7 +169,6 @@ def test(epoch, net, testloader, attack, rank):
         state = {
             'net': net.state_dict(),
             'acc': acc,
-            'epoch': epoch,
             'loss': loss,
             'args': args
         }
@@ -215,7 +208,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
     # fast init dataloader
-    trainloader, testloader = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
@@ -237,13 +230,17 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                    step_size_up=args.epoch * len(trainloader) / 2,
-                                                    step_size_down=args.epoch * len(trainloader) / 2)
+    step_size_up=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader),
+    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
 
+    # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
-        train(epoch, net, trainloader, optimizer, lr_scheduler, scaler, attack)
-        test(epoch, net, testloader, attack, rank)
+        if args.dataset == "imagenet":
+            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+        test(net, testloader, attack, rank)
 
     # destroy process
     dist.destroy_process_group()
