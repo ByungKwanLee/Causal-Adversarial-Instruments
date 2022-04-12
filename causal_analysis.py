@@ -22,7 +22,7 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_recon_reg_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -111,6 +111,9 @@ def test():
             treat_feature = cln_feature + inst_feature
             treat_output = net(treat_feature, int=True)
 
+            adv_causal = c_net(adv_feature)
+            adv_causal_out = net(adv_causal, int=True)
+
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature, int=True)
 
@@ -152,7 +155,7 @@ def visualizaition():
     elif args.base == 'adv':
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
     else:
-        save_dir = './results/feature_vis/causal_recon_reg_vis_' + str(args.dataset) + '_' + str(args.network)
+        save_dir = './results/feature_vis/causal_vis_' + str(args.dataset) + '_' + str(args.network)
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
@@ -169,22 +172,23 @@ def visualizaition():
         treat_feature = cln_feature + inst_feature
         causal_feature = c_net(treat_feature)
 
-        adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
-        causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
-        treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
-        inst_inv = SpInversion(inst_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
-
         _, adv_pred = net(adv_feature, int=True).max(1)
         _, causal_pred = net(causal_feature, int=True).max(1)
         _, treat_pred = net(treat_feature, int=True).max(1)
         _, inst_pred = net(inst_feature, int=True).max(1)
 
-        label = [targets.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
-        inv = [adv_inv, causal_inv, treat_inv, inst_inv]
+        if targets.item() != adv_pred.item():
+            adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+            causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+            treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+            inst_inv = SpInversion(inst_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
 
-        save_img = causal_vis(inputs, inv, label, dataset=args.dataset)
-        save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
-        print("\n [*] Inversion Img%d is saved" % (batch_idx))
+            label = [targets.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
+            inv = [adv_inv, causal_inv, treat_inv, inst_inv]
+
+            save_img = causal_vis(inputs, inv, label, dataset=args.dataset)
+            save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
+            print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
 def net_visualize():
     net.eval()

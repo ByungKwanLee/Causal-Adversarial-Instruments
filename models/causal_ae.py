@@ -44,8 +44,9 @@ class CausalAE(nn.Module):
         self.nc = nc
 
         if dataset == 'imagenet':
-            self.c_list = []
-            self.k_list = []
+            self.k_list = 3
+            self.c_list = [512, 512, 1024, 1024, 512, 512]
+
         else:
             self.k_list = 3
             self.c_list = [512, 512, 1024, 1024, 512, 512]

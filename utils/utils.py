@@ -138,8 +138,11 @@ def causal_vis(img, inv, label, dataset=None):
         f = open("./utils/imagenet_label.txt", 'r')
         lines = f.readlines()
         target = lines[label[0]].split(',')[0].split(':')[1].split("'")[1]
-        pred = lines[label[1]].split(',')[0].split(':')[1].split("'")[1]
-        o_label = [target, pred]
+        pred1 = lines[label[1]].split(',')[0].split(':')[1].split("'")[1]
+        pred2 = lines[label[2]].split(',')[0].split(':')[1].split("'")[1]
+        pred3 = lines[label[3]].split(',')[0].split(':')[1].split("'")[1]
+        pred4 = lines[label[4]].split(',')[0].split(':')[1].split("'")[1]
+        o_label = [target, pred1, pred2, pred3, pred4]
         f.close()
 
     draw = ImageDraw.Draw(bg_img)
