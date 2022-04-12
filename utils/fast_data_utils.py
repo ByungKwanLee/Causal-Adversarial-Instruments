@@ -94,8 +94,8 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         decoder = RandomResizedCropRGBImageDecoder((init_size, init_size))
 
         paths = {
-            'train': '/mnt/hard1/lbk/imagenet/imagenet_train_jpeg90_256_jpg.beton',
-            'test': '/mnt/hard1/lbk/imagenet/imagenet_test_jpeg90_256_jpg.beton'
+            'train': '/mnt/hard1/lbk/imagenet/imagenet_train.beton',
+            'test': '/mnt/hard1/lbk/imagenet/imagenet_test.beton'
         }
         # for large dataset
         loaders = {}
@@ -116,6 +116,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
             ])
 
             order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+            #order = OrderOption.RANDOM
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
                                    num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,

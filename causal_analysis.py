@@ -22,7 +22,7 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
@@ -93,7 +93,7 @@ def test():
 
     for key in attack_module:
         total = 0
-        adv_correct, causal_correct, inst_correct, treat_correct = 0, 0 ,0, 0
+        adv_correct, causal_correct, inst_correct, advcausal_correct, treat_correct = 0, 0 ,0, 0, 0
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
 
         for batch_idx, (inputs, targets) in prog_bar:
@@ -120,16 +120,18 @@ def test():
             _, adv_predicted = adv_output.max(1)
             _, inst_predicted = inst_output.max(1)
             _, treat_predicted = treat_output.max(1)
+            _, adv_causal_predicted = adv_causal_out.max(1)
             _, causal_predicted = causal_output.max(1)
 
             total += targets.size(0)
             adv_correct += adv_predicted.eq(targets).sum().item()
             inst_correct += inst_predicted.eq(targets).sum().item()
             treat_correct += treat_predicted.eq(targets).sum().item()
+            advcausal_correct += adv_causal_predicted.eq(targets).sum().item()
             causal_correct += causal_predicted.eq(targets).sum().item()
 
-            desc = ('[Test/%s] Adv_Acc: %.3f%% | Inst_Acc:  %.3f%%| Treat_Acc:  %.3f%% | Causal_Acc:  %.3f%%'
-                    % (key, 100. * adv_correct / total, 100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total))
+            desc = ('[Test/%s] Adv_Acc: %.3f%% | Inst_Acc:  %.3f%%| Treat_Acc:  %.3f%% | Adv_Causal:  %.3f%% | Causal_Acc:  %.3f%%'
+                    % (key, 100. * adv_correct / total, 100. * inst_correct / total, 100. * treat_correct / total, 100. * causal_correct / total, 100. * causal_correct / total))
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
@@ -237,8 +239,8 @@ def net_visualize():
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
-    visualizaition()
-    #test()
+    #visualizaition()
+    test()
 
 
 
