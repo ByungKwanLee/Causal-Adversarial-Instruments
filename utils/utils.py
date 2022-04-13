@@ -6,10 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from skimage.transform import resize
+import io
 from PIL import Image, ImageDraw, ImageFont
 
 selectedFont = ImageFont.truetype(os.path.join('usr/share/fonts/', 'NanumGothic.ttf'), size=15)
-
 
 def do_freeze(net):
     for params in net.parameters():
@@ -51,7 +51,7 @@ def get_pseudo(adv_output):
     psuedo_onehot.zero_()
     psuedo_onehot.scatter_(1, idx.unsqueeze(-1), 1)
 
-    return psuedo_onehot, idx
+    return psuedo_onehot
 
 def get_onehot(adv_output, targets):
     b, c = adv_output.shape
@@ -60,6 +60,50 @@ def get_onehot(adv_output, targets):
     psuedo_onehot.scatter_(1, targets.unsqueeze(-1), 1)
 
     return psuedo_onehot
+
+def show_with_var(pred_buf, dataset):
+    if dataset == 'imagenet':
+        object_categories = np.linspace(0, 999, num=1000)
+    elif dataset == 'cifar10' or 'svhn':
+        object_categories = np.linspace(0, 9, num=10)
+    elif dataset == 'cifar100':
+        object_categories = np.linspace(0, 99, num=100)
+
+    pred = pred_buf / pred_buf[5]
+
+
+    """Display single mnist digit next to the variance per class"""
+    fig, axs = plt.subplots(2, 3, figsize=(70,15))
+    axs[0][0].bar(object_categories, pred[5].cpu().detach().numpy(), color='green')
+    axs[0][0].set_ylim([0, 4])
+    axs[1][0].bar(object_categories, pred[0].cpu().detach().numpy(), color='green')
+    axs[1][0].set_ylim([0, 4])
+
+    axs[0][1].bar(object_categories, pred[1].cpu().detach().numpy(), color='red')
+    axs[0][1].set_ylim([0, 4])
+    axs[1][1].bar(object_categories, pred[2].cpu().detach().numpy(), color='blue')
+    axs[1][1].set_ylim([0, 4])
+
+    axs[0][2].bar(object_categories, pred[3].cpu().detach().numpy(), color='blue')
+    axs[0][2].set_ylim([0, 4])
+    axs[1][2].bar(object_categories, pred[4].cpu().detach().numpy(), color='blue')
+    axs[1][2].set_ylim([0, 4])
+
+    axs[0][0].title.set_text('True Label')
+    axs[1][0].title.set_text('Clean Label')
+
+    axs[0][1].title.set_text('Adv Label')
+    axs[1][1].title.set_text('Inst Label')
+
+    axs[0][2].title.set_text('Treat Label')
+    axs[1][2].title.set_text('Causal Label')
+
+    buf = io.BytesIO()
+    fig.savefig(buf)
+    buf.seek(0)
+    img = Image.open(buf)
+
+    return img
 
 def torch_blur(tensor, out_c=3, ):
     depth = tensor.shape[1]
@@ -219,7 +263,6 @@ def get_randomresizedcrop(epoch, min_res, max_res, end_ramp, start_ramp):
     final_res = int(np.round(interp[0] / 32)) * 32
 
     return torchvision.transforms.RandomResizedCrop((final_res, final_res))
-
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):

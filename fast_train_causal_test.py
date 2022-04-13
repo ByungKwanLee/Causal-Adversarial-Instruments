@@ -121,7 +121,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_output = net(causal_feature, int=True)
 
             recon_loss = ((causal_feature - adv_feature) ** 2).mean()
-            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean() + recon_loss
+            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()# + recon_loss
 
         # Accerlating backward propagation
         scaler.scale(causal_loss).backward(retain_graph=True)
@@ -234,7 +234,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_t_recon_reg_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_t_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))

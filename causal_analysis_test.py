@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_t_reg_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_t_recon_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -80,9 +80,7 @@ def test():
     net.eval()
     c_net.eval()
     z_net.eval()
-    test_loss, causal_test_loss, inst_test_loss, treat_test_loss = 0, 0, 0, 0
 
-    attack_score = []
     attack_module = {}
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
     for attack_name in ['pgd']:
@@ -190,6 +188,79 @@ def visualizaition():
             save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
             print("\n [*] Inversion Img%d is saved" % (batch_idx))
 
+def class_prediction():
+    net.eval()
+    c_net.eval()
+    z_net.eval()
+    attack_module = {}
+
+    for attack_name in ['pgd']:
+        args.attack = attack_name
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
+                                                   eps=args.eps, steps=args.steps,)
+
+    for key in attack_module:
+        total = 0
+        adv_correct, causal_correct, inst_correct, treat_correct = 0, 0, 0, 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
+        if args.dataset == 'imagnet':
+            pred_buf = torch.zeros(6, 1000).cuda()
+        elif args.dataset == 'cifar10' or 'svhn':
+            pred_buf = torch.zeros(6, 10).cuda()
+        elif args.dataset == 'cifar100':
+            pred_buf = torch.zeros(6, 100).cuda()
+        elif args.dataset == 'tiny':
+            pred_buf = torch.zeros(6, 200).cuda()
+        else:
+            raise Exception("Worng Dataset")
+
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.cuda(), targets.cuda()
+            adv_inputs = attack_module[key](inputs, targets)
+
+            adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
+            residual = adv_feature - cln_feature
+
+            adv_output = net(adv_feature, int=True)
+            cln_output = net(cln_feature, int=True)
+
+            inst_feature = z_net(residual)
+            inst_output = net(cln_feature + inst_feature, int=True)
+
+            treat_feature = cln_feature + c_net(residual)
+            treat_output = net(treat_feature, int=True)
+
+            causal_feature = c_net(inst_feature)
+            causal_output = net(cln_feature + causal_feature, int=True)
+
+            pred_buf[0] += get_pseudo(cln_output).sum(0)
+            pred_buf[1] += get_pseudo(adv_output).sum(0)
+            pred_buf[2] += get_pseudo(inst_output).sum(0)
+            pred_buf[3] += get_pseudo(treat_output).sum(0)
+            pred_buf[4] += get_pseudo(causal_output).sum(0)
+            pred_buf[5] += get_onehot(adv_output, targets).sum(0)
+
+            _, adv_predicted = adv_output.max(1)
+            _, inst_predicted = inst_output.max(1)
+            _, treat_predicted = treat_output.max(1)
+            _, causal_predicted = causal_output.max(1)
+
+            total += targets.size(0)
+            adv_correct += adv_predicted.eq(targets).sum().item()
+            inst_correct += inst_predicted.eq(targets).sum().item()
+            treat_correct += treat_predicted.eq(targets).sum().item()
+            causal_correct += causal_predicted.eq(targets).sum().item()
+
+            desc = ('[Test/%s] Adv: %.2f%% | Inst: %.2f%%| Treat: %.2f%% | Causal: %.2f%%'
+                    % (key, 100. * adv_correct / total, 100. * inst_correct / total, 100. * treat_correct / total,
+                       100. * causal_correct / total))
+            prog_bar.set_description(desc, refresh=True)
+
+        img = show_with_var(pred_buf, args.dataset)
+        img.save('stat_%s.png' %(str(causal_checkpoint_name.split('/')[-1].split('.')[0])))
+
 def net_visualize():
     net.eval()
     c_net.eval()
@@ -238,7 +309,8 @@ if __name__ == '__main__':
     set_random(777)
     #net_visualize()
     #visualizaition()
-    test()
+    class_prediction()
+    #test()
 
 
 
