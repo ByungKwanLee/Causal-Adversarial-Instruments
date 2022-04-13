@@ -29,7 +29,7 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
@@ -133,12 +133,16 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(treat_feature)
             causal_output = net(causal_feature.clone().detach(), int=True)
 
-            reg = (inst_feature ** 2).mean()
+            adv_causal_feature = c_net(adv_feature.clone().detach())
+            adv_causal_output = net(adv_causal_feature.clone(), int=True)
+
+            reg = ((inst_feature - residual) ** 2).mean()
 
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean() + reg
 
             ce_loss = criterion(causal_output, targets)  # For XE loss checking
             ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
+            ce_loss3 = criterion(adv_causal_output, targets)
 
         # Accerlating backward propagation
         scaler.scale(inst_loss).backward()
@@ -149,6 +153,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             writer.add_scalar('Train/inst_loss', inst_loss, counter)
             writer.add_scalar('Train/causlXE_loss', ce_loss, counter)
             writer.add_scalar('Train/instXE_loss', ce_loss2, counter)
+            writer.add_scalar('Train/advXE_loss', ce_loss3, counter)
             writer.add_scalar('Train/recon_loss', recon_loss, counter)
             writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
             counter += 1
@@ -191,21 +196,27 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
 
         # Accerlating forward propagation
         with autocast():
+            # adv_feature = net(adv_inputs, pop=True)
+            # cln_feature = net(inputs, pop=True)
+            #
+            # inst_feature = z_net(adv_feature - cln_feature)
+            # cln_feature = net(inputs, pop=True)
+            #
+            # treat_feature = cln_feature + inst_feature
+            #
+            # causal_feature = c_net(treat_feature)
+            # causal_output = net(causal_feature, int=True)
+            #
+            # loss = criterion(causal_output, targets)
             adv_feature = net(adv_inputs, pop=True)
-            cln_feature = net(inputs, pop=True)
 
-            inst_feature = z_net(adv_feature - cln_feature)
-            cln_feature = net(inputs, pop=True)
+            adv_causal_feature = c_net(adv_feature)
+            adv_causal_output = net(adv_causal_feature, int=True)
 
-            treat_feature = cln_feature + inst_feature
-
-            causal_feature = c_net(treat_feature)
-            causal_output = net(causal_feature, int=True)
-
-            loss = criterion(causal_output, targets)
+            loss = criterion(adv_causal_output, targets)
 
         test_loss += loss.item()
-        _, predicted = causal_output.max(1)
+        _, predicted = adv_causal_output.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
