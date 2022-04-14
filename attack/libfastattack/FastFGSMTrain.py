@@ -55,11 +55,6 @@ class FastFGSMTrain(Attack):
         grad = torch.autograd.grad(scaled_loss, adv_images,
                                    retain_graph=False, create_graph=False)[0]
 
-
-<<<<<<< HEAD
-        adv_images_ = adv_images.detach() + 2.5 * self.eps*grad.sign()
-=======
         adv_images_ = adv_images.detach() + self.alpha * self.eps*grad.sign()
->>>>>>> ad7c228084fa485ed4c04e0b6d7350e5ab569d69
         delta = torch.clamp(adv_images_ - images, min=-self.eps, max=self.eps)
         return torch.clamp(images + delta, min=0, max=1).detach()

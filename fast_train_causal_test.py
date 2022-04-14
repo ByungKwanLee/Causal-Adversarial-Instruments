@@ -1,6 +1,7 @@
 # Import built-in module
 import argparse
 import warnings
+import math
 
 warnings.filterwarnings(action='ignore')
 
@@ -36,14 +37,13 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default='12355', type=str)
 
-
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
-parser.add_argument('--epoch', default=10, type=int)
-
+parser.add_argument('--epoch', default=15, type=int)
+parser.add_argument('--lamb', default=5, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -103,6 +103,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             residual = adv_feature - cln_feature
 
             adv_output = net(adv_feature, int=True)
+            cln_output = net(cln_feature, int=True)
             onehot_target = get_onehot(adv_output, targets)
 
             inst_feature = z_net(residual)
@@ -128,13 +129,11 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             treat_output = net(cln_feature + c_net(residual), int=True)
 
             # reg_loss = 0.01 * (inst_feature ** 2).sum(dim=(1,2,3)).mean()
-            import math
-            reg_loss = 5 * (softmax(inst_output) * (F.log_softmax(inst_output) - math.log(0.1))).sum(dim=1).mean()
+            # reg_loss = args.lamb * (softmax(inst_output) * (F.log_softmax(inst_output) + math.log(onehot_target.size(-1)))).sum(dim=1).mean()
+            reg_loss = args.lamb * (softmax(inst_output) * (F.log_softmax(inst_output) - F.log_softmax(cln_output))).sum(dim=1).mean()
 
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
-
             max_total_loss = inst_loss + reg_loss
-
 
             ce_loss = criterion(causal_output, targets) # For XE loss checking
             ce_loss2 = criterion(inst_output, targets) # For XE loss checking
@@ -231,10 +230,10 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_t_recon_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.lamb, args.network, args.depth))
+            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.lamb, args.network, args.depth))
 
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -293,8 +292,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # tensorboard writer
     writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
 
-    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[5, 10], gamma=0.5)
-    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[5, 10], gamma=0.5)
+    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[7, 14], gamma=0.1)
+    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[7, 14], gamma=0.1)
 
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
