@@ -272,7 +272,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Load backbone network parameters
     rprint('==> Loading Backbone checkpoint..', rank)
     checkpoint = torch.load(
-        'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth))
+        'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth), map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader
