@@ -29,7 +29,7 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=256, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_reg50_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_10_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -133,14 +133,6 @@ def test():
                 if batch_idx >= int(len(testloader) * 0.3):
                     break
 
-    #     attack_score.append(100. * correct / total)
-    #
-    # print('\n----------------Summary----------------')
-    # print(args.steps, ' steps attack')
-    # for key, score in zip(attack_module, attack_score):
-    #     print(str(key), ' : ', str(score) + '(%)')
-    # print('---------------------------------------\n')
-
 def visualizaition():
     net.eval()
     c_net.eval()
@@ -151,7 +143,7 @@ def visualizaition():
     elif args.base == 'adv':
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
     else:
-        save_dir = './results/feature_vis/causal_t_vis_' + str(args.dataset) + '_' + str(args.network)
+        save_dir = './results/feature_vis/vis_%s' %(str(causal_checkpoint_name.split('/')[-1].split('.')[0]))
 
     check_dir(save_dir)
     attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
@@ -162,20 +154,21 @@ def visualizaition():
         adv_inputs = attack(inputs, targets)
 
         adv_feature = net(adv_inputs, pop=True)
-        cln_feature = net(inputs, pop=True)
-        residual = adv_feature - cln_feature
-        worst_feature = z_net(residual)
-
-        inst_feature = cln_feature + worst_feature
-        treat_feature = cln_feature + c_net(residual)
-        causal_feature = cln_feature + c_net(worst_feature)
-
         _, adv_pred = net(adv_feature, int=True).max(1)
-        _, causal_pred = net(causal_feature, int=True).max(1)
-        _, treat_pred = net(treat_feature, int=True).max(1)
-        _, inst_pred = net(inst_feature, int=True).max(1)
 
         if targets.item() != adv_pred.item():
+            cln_feature = net(inputs, pop=True)
+            residual = adv_feature - cln_feature
+            worst_feature = z_net(residual)
+
+            inst_feature = cln_feature + worst_feature
+            treat_feature = cln_feature + c_net(residual)
+            causal_feature = cln_feature + c_net(worst_feature)
+
+            _, causal_pred = net(causal_feature, int=True).max(1)
+            _, treat_pred = net(treat_feature, int=True).max(1)
+            _, inst_pred = net(inst_feature, int=True).max(1)
+
             adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
