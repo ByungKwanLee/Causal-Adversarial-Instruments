@@ -225,6 +225,7 @@ def feature_vis(img, inv, label, dataset=None):
         target = lines[label[0]].split(',')[0].split(':')[1].split("'")[1]
         pred = lines[label[1]].split(',')[0].split(':')[1].split("'")[1]
         o_label = [target, pred]
+        label = [0, 1]
         f.close()
 
     draw = ImageDraw.Draw(bg_img)

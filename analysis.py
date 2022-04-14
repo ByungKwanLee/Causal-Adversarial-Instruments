@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str) #imagenet cifar10 svhn tiny
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--base', default='plain', type=str)
 parser.add_argument('--batch_size', default=1, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 
@@ -40,7 +40,7 @@ parser.add_argument('--f_type', default='combine', type=str, help='option: posne
 args = parser.parse_args()
 
 # Printing configurations
-print_configuration(args)
+print_configuration(args, 0)
 
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
@@ -87,7 +87,7 @@ def test():
     for attack_name in ['pgd']:
         args.attack = attack_name
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
-                                                   eps=args.eps, steps=args.steps) if attack_name != 'Plain' else None
+                                                   eps=2/255 if args.dataset == 'imagenet' else args.eps, steps=args.steps) if attack_name != 'Plain' else None
 
 
     for key in attack_module:
@@ -132,7 +132,7 @@ def visualizaition():
         save_dir = './results/feature_vis/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
 
     check_dir(save_dir)
-    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
+    attack = attack_loader(net=net, attack='pgd', eps=2/255 if args.dataset == 'imagenet' else args.eps, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:

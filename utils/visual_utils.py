@@ -30,7 +30,7 @@ class SpInversion(object):
 
         elif self.dataset == 'imagenet':
             self.img_size = 224
-            self.blur_constraint = 1.0
+            self.blur_constraint = -0.5
             self.cos_constant = 1e-6
 
         else:

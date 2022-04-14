@@ -46,6 +46,6 @@ class FastFGSMTrain(Attack):
                                    retain_graph=False, create_graph=False)[0]
 
 
-        adv_images_ = adv_images.detach() + 1.25 * self.eps*grad.sign()
+        adv_images_ = adv_images.detach() + 2.5 * self.eps*grad.sign()
         delta = torch.clamp(adv_images_ - images, min=-self.eps, max=self.eps)
         return torch.clamp(images + delta, min=0, max=1).detach()
