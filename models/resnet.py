@@ -270,15 +270,12 @@ def resnet(depth=18, dataset='imagenet', mean=None, std=None):
     if depth == 18:
         block = BasicBlock
         layers = [2, 2, 2, 2]
-        url = "https://download.pytorch.org/models/resnet18-f37072fd.pth"
     elif depth == 34:
         block = BasicBlock
         layers = [3, 4, 6, 3]
-        url = "https://download.pytorch.org/models/resnet34-b627a593.pth"
     elif depth == 50:
         block = Bottleneck
         layers = [3, 4, 6, 3]
-        url = "https://download.pytorch.org/models/resnet50-0676ba61.pth"
     else:
         raise NotImplementedError
 

@@ -11,6 +11,16 @@ class FastFGSMTrain(Attack):
         self.eps = eps
         self._supported_mode = ['default', 'targeted']
         self.scaler = GradScaler()
+        self.alpha = self.return_alpha()
+
+    def return_alpha(self):
+        for name, child in self.model.module.named_children():
+            self.child.append(child)
+
+        if self.child[-1].out_features > 10:
+            return 2.5
+        else:
+            return 1.25
 
     def forward(self, images, labels):
 
@@ -46,6 +56,10 @@ class FastFGSMTrain(Attack):
                                    retain_graph=False, create_graph=False)[0]
 
 
+<<<<<<< HEAD
         adv_images_ = adv_images.detach() + 2.5 * self.eps*grad.sign()
+=======
+        adv_images_ = adv_images.detach() + self.alpha * self.eps*grad.sign()
+>>>>>>> ad7c228084fa485ed4c04e0b6d7350e5ab569d69
         delta = torch.clamp(adv_images_ - images, min=-self.eps, max=self.eps)
         return torch.clamp(images + delta, min=0, max=1).detach()

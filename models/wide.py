@@ -43,7 +43,7 @@ class NetworkBlock(nn.Module):
         return self.layer(x)
 
 class WideResNet(nn.Module):
-    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0, mean=None, std=None, dataset=None):
+    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0, mean=None, std=None):
         super(WideResNet, self).__init__()
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert((depth - 4) % 6 == 0)
@@ -52,7 +52,6 @@ class WideResNet(nn.Module):
         # configuration
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
-        self.dataset = dataset
         self.num_classes = num_classes
 
         block = BasicBlock
@@ -102,7 +101,7 @@ class WideResNet(nn.Module):
             out = out.view(-1, self.nChannels)
             return self.fc(out)
 
-def wide_resnet(depth=28, widen_factor=10, dataset='cifar10', mean=None, std=None):
+def wide_resnet(depth=34, widen_factor=10, dataset='cifar10', mean=None, std=None):
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
     elif dataset == 'cifar100':
@@ -113,8 +112,8 @@ def wide_resnet(depth=28, widen_factor=10, dataset='cifar10', mean=None, std=Non
         num_classes = 1000
     else:
         raise NotImplementedError
-    return WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.3,
-                      mean=mean, std=std, dataset=dataset)
+    return WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0,
+                      mean=mean, std=std)
 
 
 

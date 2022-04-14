@@ -22,8 +22,8 @@ parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--gpu', default='2', type=str)
+parser.add_argument('--port', default='12357', type=str)
 
 args = parser.parse_args()
 

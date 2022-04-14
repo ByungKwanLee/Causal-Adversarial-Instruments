@@ -36,6 +36,7 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default='12355', type=str)
 
+
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
@@ -43,12 +44,12 @@ parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
 
+
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
-
-parser.add_argument('--log_dir', type=str, default='logs_tt', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs_t', help='directory of training logs')
 args = parser.parse_args()
 
 # the number of gpus for multi-process
@@ -133,6 +134,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
 
             max_total_loss = inst_loss + reg_loss
+
 
             ce_loss = criterion(causal_output, targets) # For XE loss checking
             ce_loss2 = criterion(inst_output, targets) # For XE loss checking
@@ -229,7 +231,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_F_reg5_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_t_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
             args.dataset, args.dataset, args.network, args.depth))
@@ -277,6 +279,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -298,6 +301,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
             decoder.output_size = (res, res)
+
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler,
                      scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)

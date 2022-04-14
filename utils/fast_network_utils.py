@@ -6,7 +6,6 @@ from models.densenet import densenet
 from models.causal_ae import causal
 from models.exo_generator import exogenous
 
-
 def get_network(network, depth, dataset, exo=False, exo_net=None):
 
     if dataset == 'cifar10':
@@ -26,16 +25,18 @@ def get_network(network, depth, dataset, exo=False, exo_net=None):
         std = torch.tensor([0.229, 0.224, 0.225]).cuda()
 
     if network == 'vgg':
-        return vgg(depth=depth, dataset=dataset, mean=mean, std=std)
+        model = vgg(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'resnet':
-        return resnet(depth=depth, dataset=dataset, mean=mean, std=std)
+        model = resnet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'wide':
-        return wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
+        model = wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
     elif network == 'dense':
-        return densenet(depth=depth, dataset=dataset, mean=mean, std=std)
+        model = densenet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'causal':
-        return causal(dataset=dataset)
+        model = causal(dataset=dataset)
     elif network == 'instrument':
-        return exogenous(dataset=dataset)
+        model = exogenous(dataset=dataset)
     else:
         raise NotImplementedError
+
+    return model

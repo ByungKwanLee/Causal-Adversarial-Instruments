@@ -28,11 +28,17 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='wide', type=str)
+<<<<<<< HEAD
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default='12356', type=str)
+=======
+parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--port', default='12355', type=str)
+>>>>>>> ad7c228084fa485ed4c04e0b6d7350e5ab569d69
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.1, type=float)
@@ -168,9 +174,6 @@ def test(net, testloader, attack, rank):
     if acc > best_acc:
         state = {
             'net': net.state_dict(),
-            'acc': acc,
-            'loss': loss,
-            'args': args
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
@@ -214,7 +217,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Load Plain Network
     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-    checkpoint = torch.load(checkpoint_name)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
@@ -230,8 +233,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else 2 * len(trainloader),
-    step_size_down=args.epoch * len(trainloader) / 2 if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' else 2 * len(trainloader),
+    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epoch):
