@@ -30,12 +30,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--port', default='12352', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -43,7 +43,8 @@ parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
-parser.add_argument('--lamb', default=10, type=int)
+parser.add_argument('--lamb', default=0.1, type=float)
+#parser.add_argument('--lamb', default=1, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -103,17 +104,20 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             residual = adv_feature - cln_feature
 
             adv_output = net(adv_feature, int=True)
+            cln_output = net(cln_feature, int=True)
             onehot_target = get_onehot(adv_output, targets)
 
             inst_feature = z_net(residual)
             inst_output = net(cln_feature + inst_feature, int=True)
 
-            causal_feature = cln_feature + c_net(inst_feature)
-            causal_output = net(causal_feature, int=True)
+            causal_feature = c_net(inst_feature)
+            causal_output = net(cln_feature + causal_feature, int=True)
 
             recon_loss = ((c_net(residual) - residual) ** 2).mean()
-            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()# + recon_loss
-            min_total_loss = causal_loss# + recon_loss
+            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
+
+            # causal_reg_loss = (causal_feature ** 2).sum(dim=(1,2,3)).mean()
+            min_total_loss = causal_loss
 
         # Accerlating backward propagation
         scaler.scale(min_total_loss).backward(retain_graph=True)
@@ -123,17 +127,39 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
-            causal_feature = cln_feature + c_net(inst_feature)
-            causal_output = net(causal_feature, int=True)
+            causal_feature = c_net(inst_feature)
+            causal_output = net(cln_feature + causal_feature, int=True)
             treat_output = net(cln_feature + c_net(residual), int=True)
 
-            # reg_loss = 0.01 * (inst_feature ** 2).sum(dim=(1,2,3)).mean()
+            reg_loss = args.lamb * (inst_feature ** 2).sum(dim=[1,2,3]).mean()
             # reg_loss = args.lamb * (softmax(inst_output) * (F.log_softmax(inst_output) + math.log(onehot_target.size(-1)))).sum(dim=1).mean()
-            #reg_loss = args.lamb * ((softmax(inst_output) * (F.log_softmax(inst_output) - F.log_softmax(cln_output))).sum(dim=1).mean())
-            reg_loss = args.lamb * (softmax(inst_output) * (F.log_softmax(inst_output)  + math.log(onehot_target.size(-1)))).sum(dim=1).mean()
+            # reg_loss = args.lamb * ((softmax(inst_output) * (F.log_softmax(inst_output) - F.log_softmax(cln_output))).sum(dim=1).mean())
+            # reg_loss = args.lamb * (softmax(inst_output) * (F.log_softmax(inst_output)  + math.log(onehot_target.size(-1)))).sum(dim=1).mean()
+
+            # sum_clean = ((1-onehot_target) * softmax(adv_output)).sum(dim=1, keepdim=True)
+            # p = (1-onehot_target) * softmax(adv_output) / sum_clean
+            # sum_inst = ((1-onehot_target) * softmax(inst_output)).sum(dim=1, keepdim=True)
+            # q = (1-onehot_target) * softmax(inst_output) / sum_inst
+            # p = (p==0) * 1e-3 + (p!=0) * p
+            # q = (q==0) * 1e-3 + (q!=0) * q
+            # reg_loss = args.lamb * (q * (q.log()-p.log())).sum(dim=1).mean()
+            # reg_loss = args.lamb * -(p * q.log()).sum(dim=1).mean()
+            # reg_loss = args.lamb * -(p * q.log()).sum(dim=1).mean() + (inst_feature ** 2).mean()
+
+            # sum_clean = ((1-onehot_target) * softmax(cln_output)).sum(dim=1, keepdim=True)
+            # p = (1-onehot_target) * softmax(cln_output) / sum_clean
+            # sum_inst = ((1-onehot_target) * softmax(inst_output)).sum(dim=1, keepdim=True)
+            # q = (1-onehot_target) * softmax(inst_output) / sum_inst
+            # p = (p==0) * 1e-3 + (p!=0) * p
+            # q = (q==0) * 1e-3 + (q!=0) * q
+            # reg_loss = args.lamb * (q * (q.log()-p.log())).sum(dim=1).mean()
+            # reg_loss = args.lamb * -(p * q.log()).sum(dim=1).mean()
+            # reg_loss = args.lamb * -(p * q.log()).sum(dim=1).mean() + (inst_feature ** 2).mean()
+
 
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
-            max_total_loss = inst_loss# + reg_loss
+            max_total_loss = inst_loss + reg_loss
+
 
             ce_loss = criterion(causal_output, targets) # For XE loss checking
             ce_loss2 = criterion(inst_output, targets) # For XE loss checking
@@ -197,8 +223,8 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
 
             residual = adv_feature - cln_feature
 
-            treat_feature = cln_feature + c_net(residual)
-            treat_output = net(treat_feature, int=True)
+            treat_feature = c_net(residual)
+            treat_output = net(cln_feature + treat_feature, int=True)
 
             loss = criterion(treat_output, targets)
 
@@ -230,10 +256,10 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            # torch.save(state, './checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
-            # args.dataset, args.dataset, args.lamb, args.network, args.depth))
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
-                args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.lamb, args.network, args.depth))
+            # torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
+            #     args.dataset, args.dataset, args.network, args.depth))
 
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
             args.dataset, args.dataset, args.lamb, args.network, args.depth))

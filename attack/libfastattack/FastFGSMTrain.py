@@ -14,6 +14,7 @@ class FastFGSMTrain(Attack):
         self.alpha = self.return_alpha()
 
     def return_alpha(self):
+        self.child = []
         for name, child in self.model.module.named_children():
             self.child.append(child)
 

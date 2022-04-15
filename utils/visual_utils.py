@@ -35,7 +35,7 @@ class SpInversion(object):
 
         else:
             self.img_size = 32
-            self.blur_constraint = -0.5
+            self.blur_constraint = -0.01
             self.cos_constant = 1e-6
 
 
