@@ -22,16 +22,16 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='resnet', type=str)
 
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=256, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 
-# attack parameter
+# attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=30, type=int)
@@ -45,7 +45,7 @@ args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 
 # init dataloader
-_, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False)
+_, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False, shuffle=True)
 
 # init model
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_1_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_20_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -85,9 +85,7 @@ def test():
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
     for attack_name in ['pgd']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
-                                                   eps=args.eps, steps=args.steps,
-                                                   )
+        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
 
     for key in attack_module:
         total = 0
@@ -146,7 +144,9 @@ def visualizaition():
         save_dir = './results/feature_vis/vis_%s' %(str(causal_checkpoint_name.split('/')[-1].split('.')[0]))
 
     check_dir(save_dir)
-    attack = attack_loader(net=net, attack='pgd', eps=args.eps, steps=args.steps)
+
+
+    attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -189,15 +189,14 @@ def class_prediction():
 
     for attack_name in ['pgd']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name,
-                                                   eps=args.eps, steps=args.steps,)
+        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
 
     for key in attack_module:
         total = 0
         adv_correct, causal_correct, inst_correct, treat_correct = 0, 0, 0, 0
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
 
-        if args.dataset == 'imagnet':
+        if args.dataset == 'imagenet':
             pred_buf = torch.zeros(6, 1000).cuda()
         elif args.dataset == 'cifar10' or 'svhn':
             pred_buf = torch.zeros(6, 10).cuda()

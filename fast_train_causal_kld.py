@@ -30,26 +30,26 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12359', type=str)
+parser.add_argument('--port', default='12356', type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.0001, type=float)
+parser.add_argument('--learning_rate', default=0.00005, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
-parser.add_argument('--lamb', default=1, type=int)
+parser.add_argument('--lamb', default=5, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
-parser.add_argument('--log_dir', type=str, default='logs_r', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # the number of gpus for multi-process
@@ -73,7 +73,6 @@ scaler = GradScaler()
 counter = 0
 log_dir = args.log_dir + f'{args.lamb}/'
 check_dir(log_dir)
-
 
 def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler,
                  attack, rank, writer):
@@ -103,7 +102,6 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             residual = adv_feature - cln_feature
 
             adv_output = net(adv_feature, int=True)
-            cln_output = net(cln_feature, int=True)
             onehot_target = get_onehot(adv_output, targets)
 
             inst_feature = z_net(residual)
@@ -112,14 +110,16 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_feature = c_net(inst_feature)
             causal_output = net(cln_feature + causal_feature, int=True)
 
-            recon_loss = args.lamb * ((c_net(residual) - residual) ** 2).mean()
+            recon_loss = ((c_net(residual) - residual) ** 2).mean()
             causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
 
-            min_total_loss = causal_loss + recon_loss
+            # causal_reg_loss = (causal_feature ** 2).sum(dim=(1,2,3)).mean()
+            min_total_loss = causal_loss
 
         # Accerlating backward propagation
         scaler.scale(min_total_loss).backward(retain_graph=True)
         scaler.step(c_optimizer)
+        # scaler.update()
 
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
@@ -128,7 +128,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_output = net(cln_feature + causal_feature, int=True)
             treat_output = net(cln_feature + c_net(residual), int=True)
 
-            reg_loss = args.lamb * ((inst_feature - residual) ** 2).mean()
+            reg_loss = args.lamb * (inst_feature ** 2).mean()
 
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
             max_total_loss = inst_loss + reg_loss
@@ -144,7 +144,6 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         if rank == 0:
             writer.add_scalar('Train/causal_loss', causal_loss, counter)
             writer.add_scalar('Train/inst_loss', inst_loss, counter)
-            writer.add_scalar('Train/reg_loss', reg_loss, counter)
             writer.add_scalar('Train/causlXE_loss', ce_loss, counter)
             writer.add_scalar('Train/instXE_loss', ce_loss2, counter)
             writer.add_scalar('Train/advXE_loss', ce_loss3, counter)
@@ -228,10 +227,10 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_recon_%d_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.lamb, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_lr5%d_%s%s_best.t7' % (
+                args.dataset, args.dataset, args.lamb, args.network, args.depth))
 
-            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%d_%s%s_best.t7' % (
+            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
             args.dataset, args.dataset, args.lamb, args.network, args.depth))
 
 

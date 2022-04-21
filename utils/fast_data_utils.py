@@ -66,7 +66,7 @@ def save_data_for_beton(dataset, root='../data'):
             writer.from_indexed_dataset(ds)
 
 
-def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True):
+def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True, shuffle=False):
 
     gpu = f'cuda:{torch.cuda.current_device()}'
     decoder = None
@@ -113,9 +113,10 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                 ToTorchImage(),
                 Normalize_and_Convert(torch.float16, True)
             ])
-
-            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
-            #order = OrderOption.RANDOM
+            if shuffle:
+                order = OrderOption.RANDOM
+            else:
+                order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
                                    num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,

@@ -1,6 +1,7 @@
 # Import built-in module
 import argparse
 import warnings
+import math
 
 warnings.filterwarnings(action='ignore')
 
@@ -29,26 +30,26 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12358', type=str)
+parser.add_argument('--port', default='12359', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
-parser.add_argument('--epoch', default=60, type=int)
+parser.add_argument('--epoch', default=10, type=int)
+parser.add_argument('--lamb', default=1, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=0.03, type=float)
 parser.add_argument('--steps', default=10, type=int)
-
-parser.add_argument('--log_dir', type=str, default='logs_x', help='directory of training logs')
+parser.add_argument('--log_dir', type=str, default='logs', help='directory of training logs')
 args = parser.parse_args()
 
 # the number of gpus for multi-process
@@ -70,9 +71,8 @@ softmax = nn.Softmax(dim=1)
 # Mix Training
 scaler = GradScaler()
 counter = 0
-log_dir = args.log_dir + '/'
+log_dir = args.log_dir
 check_dir(log_dir)
-
 
 def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler, scaler,
                  attack, rank, writer):
@@ -84,17 +84,12 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
     adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
     total = 0
 
-    resize = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=27, start_ramp=23)
-
     desc = ('[Train/C_LR=%s/Z_LR=%s] Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%%' %
             (c_scheduler.get_last_lr()[0], z_scheduler.get_last_lr()[0], 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-
-        if args.dataset == 'imagenet':
-            inputs = resize(inputs)
 
         adv_inputs = attack(inputs, targets)
 
@@ -106,41 +101,40 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             cln_feature = net(inputs, pop=True)
             residual = adv_feature - cln_feature
 
-            adv_output = net(adv_feature.clone().detach(), int=True)
+            adv_output = net(adv_feature, int=True)
             onehot_target = get_onehot(adv_output, targets)
 
-            inst_feature = cln_feature + z_net(residual)
-            inst_output = net(inst_feature.clone(), int=True)
+            inst_feature = z_net(residual)
+            inst_output = net(cln_feature + inst_feature, int=True)
 
-            treat_output = net(adv_feature.clone().detach(), int=True)
+            causal_feature = c_net(inst_feature)
+            causal_output = net(cln_feature + causal_feature, int=True)
 
-            causal_feature = c_net(adv_feature)
-            causal_output = net(causal_feature.clone(), int=True)
+            recon_loss = ((c_net(residual) - residual) ** 2).mean()
+            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
 
-            recon_loss = ((causal_feature - adv_feature.detach()) ** 2).mean()
-
-            causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()# + recon_loss
+            min_total_loss = causal_loss
 
         # Accerlating backward propagation
-        scaler.scale(causal_loss).backward(retain_graph=True)
+        scaler.scale(min_total_loss).backward(retain_graph=True)
         scaler.step(c_optimizer)
-        scaler.update()
 
         c_optimizer.zero_grad(), inst_optimizer.zero_grad()
 
         with autocast():
-            causal_feature = c_net(adv_feature)
-            causal_output = net(causal_feature.clone().detach(), int=True)
+            causal_feature = c_net(inst_feature)
+            causal_output = net(cln_feature + causal_feature, int=True)
+            treat_output = net(cln_feature + c_net(residual), int=True)
 
-            reg = ((z_net(residual) - residual) ** 2).mean()
+            inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
+            max_total_loss = inst_loss
 
-            inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean() + reg
-
-            ce_loss = criterion(causal_output, targets)  # For XE loss checking
-            ce_loss2 = criterion(inst_output, targets)  # For XE loss checking
+            ce_loss = criterion(causal_output, targets) # For XE loss checking
+            ce_loss2 = criterion(inst_output, targets) # For XE loss checking
+            ce_loss3 = criterion(treat_output, targets) # For XE loss checking
 
         # Accerlating backward propagation
-        scaler.scale(inst_loss).backward()
+        scaler.scale(max_total_loss).backward()
         scaler.step(inst_optimizer)
         scaler.update()
         if rank == 0:
@@ -148,6 +142,7 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             writer.add_scalar('Train/inst_loss', inst_loss, counter)
             writer.add_scalar('Train/causlXE_loss', ce_loss, counter)
             writer.add_scalar('Train/instXE_loss', ce_loss2, counter)
+            writer.add_scalar('Train/advXE_loss', ce_loss3, counter)
             writer.add_scalar('Train/recon_loss', recon_loss, counter)
             writer.add_scalar('Train/lr', c_scheduler.get_last_lr()[0], counter)
             counter += 1
@@ -190,27 +185,18 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
 
         # Accerlating forward propagation
         with autocast():
-            # adv_feature = net(adv_inputs, pop=True)
-            # cln_feature = net(inputs, pop=True)
-            #
-            # inst_feature = z_net(adv_feature - cln_feature)
-            # cln_feature = net(inputs, pop=True)
-            #
-            # treat_feature = cln_feature + inst_feature
-            #
-            # causal_feature = c_net(treat_feature)
-            # causal_output = net(causal_feature, int=True)
-            #
-            # loss = criterion(causal_output, targets)
             adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
 
-            adv_causal_feature = c_net(adv_feature)
-            adv_causal_output = net(adv_causal_feature, int=True)
+            residual = adv_feature - cln_feature
 
-            loss = criterion(adv_causal_output, targets)
+            treat_feature = c_net(residual)
+            treat_output = net(cln_feature + treat_feature, int=True)
+
+            loss = criterion(treat_output, targets)
 
         test_loss += loss.item()
-        _, predicted = adv_causal_output.max(1)
+        _, predicted = treat_output.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -237,10 +223,11 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_x_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_recon_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.network, args.depth))
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_%s%s_best.t7' % (
+                args.dataset, args.dataset, args.network, args.depth))
+
+            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.lamb, args.network, args.depth))
 
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -278,14 +265,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Load backbone network parameters
     rprint('==> Loading Backbone checkpoint..', rank)
     checkpoint = torch.load(
-        'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth),
-        map_location=torch.device(torch.cuda.current_device()))
+        'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth), map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader
     if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -299,15 +286,21 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # tensorboard writer
     writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
 
-    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[20, 40, 60], gamma=0.5)
-    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[20, 40, 60], gamma=0.5)
+    c_scheduler = torch.optim.lr_scheduler.MultiStepLR(c_optimizer, milestones=[5, 10], gamma=0.5)
+    z_scheduler = torch.optim.lr_scheduler.MultiStepLR(inst_optimizer, milestones=[5, 10], gamma=0.5)
 
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % epoch, rank)
+        if args.dataset == "imagenet":
+            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
+
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, c_scheduler, z_scheduler,
                      scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
 
+        c_scheduler.step()
+        z_scheduler.step()
 
     # destroy process
     dist.destroy_process_group()
