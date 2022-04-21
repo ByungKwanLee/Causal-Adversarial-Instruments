@@ -6,7 +6,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
-import torch.nn as nn
 import torch.distributed as dist
 
 from utils.fast_network_utils import get_network
@@ -17,13 +16,13 @@ from utils.utils import *
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='2', type=str)
-parser.add_argument('--port', default='12357', type=str)
+parser.add_argument('--batch_size', default=512, type=float)
+parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--port', default="12355", type=str)
 
 args = parser.parse_args()
 
@@ -75,11 +74,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     checkpoint = torch.load(checkpoint_name)
     net.load_state_dict(checkpoint['net'])
 
-    # init criterion
-    criterion = nn.CrossEntropyLoss()
-
     # test
-    test_robustness(net, testloader, criterion, attack_list=['plain', 'fgsm', 'bim', 'pgd', 'cw_linf', 'mi', 'apgd', 'auto'], rank=rank)
+    test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'pgd', 'mim', 'cw_linf', 'ap', 'dlr', 'aa'], rank=rank)
 
     # destroy process
     dist.destroy_process_group()

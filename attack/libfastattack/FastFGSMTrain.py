@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast
 from torchattacks.attack import Attack
 
@@ -18,7 +17,7 @@ class FastFGSMTrain(Attack):
         for name, child in self.model.module.named_children():
             self.child.append(child)
 
-        if self.child[-1].out_features > 10:
+        if self.child[-1].out_features > 200:
             return 2.5
         else:
             return 1.25

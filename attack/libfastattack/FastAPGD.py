@@ -7,25 +7,6 @@ from torchattacks.attack import Attack
 
 
 class FastAPGD(Attack):
-    r"""
-    APGD in the paper 'Reliable evaluation of adversarial robustness with an ensemble of diverse parameter-free attacks'
-    [https://arxiv.org/abs/2003.01690]
-    [https://github.com/fra31/auto-attack]
-    Distance Measure : Linf
-    Arguments:
-        model (nn.Module): model to attack.
-        eps (float): maximum perturbation. (Default: None)
-        steps (int): number of steps. (Default: 100)
-        n_restarts (int): number of random restarts. (Default: 1)
-        seed (int): random seed for the starting point. (Default: 0)
-        loss (str): loss function optimized. ['ce', 'dlr'] (Default: 'ce')
-        eot_iter (int): number of iteration for EOT. (Default: 1)
-        rho (float): parameter for step-size update (Default: 0.75)
-    Shape:
-        - images: :math:`(N, C, H, W)` where `N = number of batches`, `C = number of channels`,        `H = height` and `W = width`. It must have a range [0, 1].
-        - labels: :math:`(N)` where each value :math:`y_i` is :math:`0 \leq y_i \leq` `number of labels`.
-        - output: :math:`(N, C, H, W)`.
-    """
 
     def __init__(self, model, eps=8 / 255, scale=0.1, steps=100, n_restarts=1,
                  seed=0, loss='ce', eot_iter=1, rho=.75):

@@ -27,18 +27,18 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.01, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=128, type=float)
-parser.add_argument('--epoch', default=30, type=int)
+parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--epoch', default=10, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -61,7 +61,8 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
+
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
     train_loss = 0
     correct = 0
@@ -75,6 +76,10 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
 
+        # calculate awp
+        awp_obj = awp.calc_awp(inputs_adv=inputs, targets=targets)
+        awp.perturb(awp_obj)
+
         # Accerlating forward propagation
         optimizer.zero_grad()
         with autocast():
@@ -85,6 +90,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        # awp restore
+        awp.restore(awp_obj)
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
@@ -175,13 +183,12 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
-
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
@@ -203,22 +210,33 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    proxy = get_network(network=args.network,
+                      depth=args.depth,
+                      dataset=args.dataset)
+    proxy = torch.nn.SyncBatchNorm.convert_sync_batchnorm(proxy)
+    proxy = proxy.to(memory_format=torch.channels_last).cuda()
+    proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
+
+    # awp adversary
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
     # Load Plain Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
+    proxy.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
-    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+    if args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else args.eps, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=0.03, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -226,19 +244,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' else 2 * len(trainloader),
-    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+    step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
 
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        if args.dataset == "imagenet":
-            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
-            decoder.output_size = (res, res)
-        elif args.dataset=="tiny":
-            res = get_resolution(epoch=epoch, min_res=40, max_res=48, end_ramp=25, start_ramp=18)
-            decoder.output_size = (res, res)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
         test(net, testloader, attack, rank)
 
     # destroy process

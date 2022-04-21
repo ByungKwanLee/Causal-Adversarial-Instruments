@@ -1,15 +1,8 @@
 import torch
-import torch.nn as nn
 from torch.cuda.amp import autocast
 from torchattacks.attack import Attack
 
 class FastMultiAttack(Attack):
-    r"""
-    MultiAttack is a class to attack a model with various attacks agains same images and labels.
-    Arguments:
-        model (nn.Module): model to attack.
-        attacks (list): list of attacks.
-    """
 
     def __init__(self, attacks, verbose=False):
 

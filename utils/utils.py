@@ -6,7 +6,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-from skimage.transform import resize
+from collections import OrderedDict
 import io
 from PIL import Image, ImageDraw, ImageFont
 
@@ -368,15 +368,14 @@ class PresetLRScheduler(object):
 # attack loader
 from attack.fastattack import attack_loader
 from tqdm import tqdm
-def test_robustness(net, testloader, criterion, attack_list, rank):
+from torch.cuda.amp import autocast
+def test_whitebox(net, testloader, attack_list, rank):
     net.eval()
-    test_loss = 0
 
     attack_module = {}
     for attack_name in attack_list:
         attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
                                                                                 if attack_name != 'plain' else None
-
     for key in attack_module:
         total = 0
         correct = 0
@@ -385,21 +384,226 @@ def test_robustness(net, testloader, criterion, attack_list, rank):
             inputs, targets = inputs.cuda(), targets.cuda()
             if key != 'plain':
                 inputs = attack_module[key](inputs, targets)
-            outputs = net(inputs)
-            loss = criterion(outputs, targets)
+            with autocast():
+                outputs = net(inputs)
 
-            test_loss += loss.item()
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            desc = ('[Test/%s] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                    % (key, test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+            desc = ('[White-Box-Test/%s] Acc: %.2f%% (%d/%d)'
+                    % (key, 100. * correct / total, correct, total))
             prog_bar.set_description(desc, refresh=True)
 
-            # fast eval
-            if (key == 'auto') or (key == 'fab'):
-                if batch_idx >= int(len(testloader) * 0.3):
-                    break
+        rprint(f'{key}: {100. * correct / total:.2f}%', rank)
 
-        rprint(f'{key}: {100. * correct / total}%', rank)
+def test_blackbox(plain_net, adv_net, testloader, attack_list, rank):
+    plain_net.eval()
+    adv_net.eval()
+
+    attack_module = {}
+    for attack_name in attack_list:
+        attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=0.03, steps=30)
+
+    for key in attack_module:
+        total = 0
+        correct = 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.cuda(), targets.cuda()
+            inputs = attack_module[key](inputs, targets)
+
+            with autocast():
+                outputs = adv_net(inputs)
+
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            desc = ('[Black-Box-Test/%s] Acc: %.2f%% (%d/%d)'
+                    % (key, 100. * correct / total, correct, total))
+            prog_bar.set_description(desc, refresh=True)
+
+        rprint(f'{key}: {100. * correct / total:.2f}%', rank)
+
+# awp package
+EPS = 1E-20
+def diff_in_weights(model, proxy):
+    diff_dict = OrderedDict()
+    model_state_dict = model.state_dict()
+    proxy_state_dict = proxy.state_dict()
+    for (old_k, old_w), (new_k, new_w) in zip(model_state_dict.items(), proxy_state_dict.items()):
+        if len(old_w.size()) <= 1:
+            continue
+        if 'weight' in old_k:
+            diff_w = new_w - old_w
+            diff_dict[old_k] = old_w.norm() / (diff_w.norm() + EPS) * diff_w
+    return diff_dict
+
+
+def add_into_weights(model, diff, coeff=1.0):
+    names_in_diff = diff.keys()
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if name in names_in_diff:
+                param.add_(coeff * diff[name])
+
+
+class AdvWeightPerturb(object):
+    def __init__(self, model, proxy, lr, gamma, autocast, GradScaler):
+        super(AdvWeightPerturb, self).__init__()
+        self.model = model
+        self.proxy = proxy
+        self.gamma = gamma
+        self.proxy_optim = torch.optim.SGD(proxy.parameters(), lr=lr)
+        self.autocast = autocast
+        self.scaler = GradScaler()
+
+    def calc_awp(self, adv_inputs, targets):
+        self.proxy.load_state_dict(self.model.state_dict())
+        self.proxy.train()
+
+        self.proxy_optim.zero_grad()
+        with self.autocast():
+            loss = - F.cross_entropy(self.proxy(adv_inputs), targets)
+
+        # Accerlating backward propagation
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.proxy_optim)
+        self.scaler.update()
+
+        # the adversary weight perturb
+        diff = diff_in_weights(self.model, self.proxy)
+        return diff
+
+    def perturb(self, diff):
+        add_into_weights(self.model, diff, coeff=1.0 * self.gamma)
+
+    def restore(self, diff):
+        add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
+
+
+# GAIR package
+def adjust_tau(epoch):
+    tau = 0
+    if epoch <= 3:
+        tau = 0
+    elif epoch <= 7:
+        tau = 3
+    else:
+        tau = 6
+    return tau
+
+def GAIR(num_steps, Kappa, Lambda, func):
+    # Weight assign
+    if func == "Tanh":
+        reweight = ((Lambda + (int(num_steps / 2) - Kappa) * 5 / (int(num_steps / 2))).tanh() + 1) / 2
+        normalized_reweight = reweight * len(reweight) / reweight.sum()
+    elif func == "Sigmoid":
+        reweight = (Lambda + (int(num_steps / 2) - Kappa) * 5 / (int(num_steps / 2))).sigmoid()
+        normalized_reweight = reweight * len(reweight) / reweight.sum()
+    elif func == "Discrete":
+        reweight = ((num_steps + 1) - Kappa) / (num_steps + 1)
+        normalized_reweight = reweight * len(reweight) / reweight.sum()
+    return normalized_reweight
+
+# Geometry-aware early stopped PGD
+def GA_earlystop(model, input, target, step_size, epsilon, perturb_steps, tau, type, random, omega):
+    model.eval()
+    K = perturb_steps
+    count = 0
+
+    output_target = []
+    output_adv = []
+    output_natural = []
+    output_Kappa = []
+
+    control = torch.zeros(len(target)).cuda()
+    control += tau
+    Kappa = torch.zeros(len(input)).cuda()
+
+    if random == False:
+        iter_adv = input.cuda().detach()
+    else:
+
+        if type == "fat_for_trades":
+            iter_adv = input.detach() + 0.001 * torch.randn(input.shape).cuda().detach()
+            iter_adv = torch.clamp(iter_adv, 0.0, 1.0)
+        if type == "fat" or "fat_for_mart":
+            iter_adv = input.detach() + torch.from_numpy(np.random.uniform(-epsilon, epsilon, input.shape)).float().cuda()
+            iter_adv = torch.clamp(iter_adv, 0.0, 1.0)
+    iter_clean_data = input.cuda().detach()
+    iter_target = target.cuda().detach()
+    output_iter_clean_data = model(input)
+
+    while K > 0:
+        iter_adv.requires_grad_()
+        output = model(iter_adv)
+        pred = output.max(1, keepdim=True)[1]
+        output_index = []
+        iter_index = []
+
+        for idx in range(len(pred)):
+            if pred[idx] != target[idx]:
+                if control[idx] == 0:
+                    output_index.append(idx)
+                else:
+                    control[idx] -= 1
+                    iter_index.append(idx)
+            else:
+                # Update Kappa
+                Kappa[idx] += 1
+                iter_index.append(idx)
+
+        if (len(output_index) != 0):
+            if (len(output_target) == 0):
+                # incorrect adv data should not keep iterated
+                output_adv = iter_adv[output_index].reshape(-1, 3, 32, 32).cuda()
+                output_natural = iter_clean_data[output_index].reshape(-1, 3, 32, 32).cuda()
+                output_target = iter_target[output_index].reshape(-1).cuda()
+                output_Kappa = Kappa[output_index].reshape(-1).cuda()
+            else:
+                # incorrect adv data should not keep iterated
+                output_adv = torch.cat((output_adv, iter_adv[output_index].reshape(-1, 3, 32, 32).cuda()), dim=0)
+                output_natural = torch.cat(
+                    (output_natural, iter_clean_data[output_index].reshape(-1, 3, 32, 32).cuda()), dim=0)
+                output_target = torch.cat((output_target, iter_target[output_index].reshape(-1).cuda()), dim=0)
+                output_Kappa = torch.cat((output_Kappa, Kappa[output_index].reshape(-1).cuda()), dim=0)
+
+        model.zero_grad()
+        with torch.enable_grad():
+            if type == "fat" or type == "fat_for_mart":
+                loss_adv = nn.CrossEntropyLoss()(output, iter_target)
+            if type == "fat_for_trades":
+                criterion_kl = nn.KLDivLoss(size_average=False).cuda()
+                loss_adv = criterion_kl(F.log_softmax(output, dim=1), F.softmax(output_iter_clean_data, dim=1))
+        loss_adv.backward(retain_graph=True)
+        grad = iter_adv.grad
+
+        if len(iter_index) != 0:
+            Kappa = Kappa[iter_index]
+            control = control[iter_index]
+            iter_adv = iter_adv[iter_index]
+            iter_clean_data = iter_clean_data[iter_index]
+            iter_target = iter_target[iter_index]
+            output_iter_clean_data = output_iter_clean_data[iter_index]
+            grad = grad[iter_index]
+            eta = step_size * grad.sign()
+            iter_adv = iter_adv.detach() + eta + omega * torch.randn(iter_adv.shape).detach().cuda()
+            iter_adv = torch.min(torch.max(iter_adv, iter_clean_data - epsilon), iter_clean_data + epsilon)
+            iter_adv = torch.clamp(iter_adv, 0, 1)
+            count += len(iter_target)
+        else:
+            return output_adv, output_target, output_natural, count, output_Kappa
+        K = K - 1
+
+    if (len(output_target) == 0):
+        output_target = iter_target.reshape(-1).squeeze().cuda()
+        output_adv = iter_adv.reshape(-1, 3, 32, 32).cuda()
+        output_Kappa = Kappa.reshape(-1).cuda()
+    else:
+        output_adv = torch.cat((output_adv, iter_adv.reshape(-1, 3, 32, 32)), dim=0).cuda()
+        output_target = torch.cat((output_target, iter_target.reshape(-1)), dim=0).squeeze().cuda()
+        output_Kappa = torch.cat((output_Kappa, Kappa.reshape(-1)), dim=0).squeeze().cuda()
+
+    return output_adv, output_target, output_Kappa.cuda()

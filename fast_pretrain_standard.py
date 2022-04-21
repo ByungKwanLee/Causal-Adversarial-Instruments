@@ -30,17 +30,17 @@ parser = argparse.ArgumentParser()
 
 
 # model parameter
-parser.add_argument('--dataset', default='cifar100', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.3, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=30, type=int)
 args = parser.parse_args()
 
@@ -177,14 +177,17 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' else 2 * len(trainloader),
-    step_size_down=(args.epoch-5) * len(trainloader) if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+    step_size_up=5*len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
+    step_size_down=(args.epoch-5)*len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epoch):
-        rprint('\nEpoch: %d' % epoch, rank)
+        rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
+        elif args.dataset=="tiny":
+            res = get_resolution(epoch=epoch, min_res=48, max_res=64, end_ramp=20, start_ramp=15)
             decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler)
         test(net, testloader, lr_scheduler, rank)

@@ -6,7 +6,7 @@ from models.densenet import densenet
 from models.causal_ae import causal
 from models.exo_generator import exogenous
 
-def get_network(network, depth, dataset, exo=False, exo_net=None):
+def get_network(network, depth, dataset):
 
     if dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465]).cuda()

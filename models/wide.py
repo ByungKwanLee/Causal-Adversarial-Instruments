@@ -112,7 +112,7 @@ def wide_resnet(depth=34, widen_factor=10, dataset='cifar10', mean=None, std=Non
         num_classes = 1000
     else:
         raise NotImplementedError
-    return WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0,
+    return WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.3,
                       mean=mean, std=std)
 
 

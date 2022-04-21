@@ -19,7 +19,6 @@ from attack.fastattack import attack_loader
 # Accelerating forward and backward
 from torch.cuda.amp import GradScaler, autocast
 
-
 torch.backends.cudnn.benchmark = True
 torch.autograd.profiler.emit_nvtx(False)
 torch.autograd.profiler.profile(False)
@@ -31,15 +30,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.5, type=float)
+parser.add_argument('--learning_rate', default=0.01, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=30, type=int)
+parser.add_argument('--epoch', default=10, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -63,26 +62,36 @@ best_acc = 0
 scaler = GradScaler()
 
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, tau, Lambda):
     net.train()
     train_loss = 0
     correct = 0
     total = 0
 
-    desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+    desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
             (lr_scheduler.get_lr()[0], 0, 0, correct, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        adv_inputs = attack(inputs, targets)
+
+        # Get adversarial data and geometry value
+        adv_inputs, adv_targets, Kappa = GA_earlystop(net, inputs, targets,
+                                                       step_size=args.eps/args.steps*2.3,
+                                                       epsilon=args.eps,
+                                                       perturb_steps=args.steps, tau=tau,
+                                                       type="fat", random=random, omega=0)
 
         # Accerlating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            adv_outputs = net(adv_inputs)
-            loss = mart_loss(outputs, adv_outputs, targets, beta=6.0)
+            outputs = net(adv_inputs)
+            loss = nn.CrossEntropyLoss(reduce=False)(outputs, adv_targets)
+
+            # Calculate weight assignment according to geometry value
+            normalized_reweight = GAIR(args.steps, Kappa, Lambda, 'Tanh')
+            loss = loss.mul(normalized_reweight).mean()
+
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -97,7 +106,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
+        desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -109,7 +118,7 @@ def test(net, testloader, attack, rank):
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+    desc = ('[Test/Clean] Loss: %.2f | Acc: %.2f%% (%d/%d)'
             % (test_loss/(0+1), 0, correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
@@ -126,7 +135,7 @@ def test(net, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        desc = ('[Test/Clean] Loss: %.2f | Acc: %.2f%% (%d/%d)'
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -137,7 +146,7 @@ def test(net, testloader, attack, rank):
     correct = 0
     total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+    desc = ('[Test/PGD] Loss: %.2f | Acc: %.2f%% (%d/%d)'
             % (test_loss / (0 + 1), 0, correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
@@ -155,7 +164,7 @@ def test(net, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        desc = ('[Test/PGD] Loss: %.2f | Acc: %.2f%% (%d/%d)'
                 % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
@@ -178,28 +187,12 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
-
-def mart_loss(logits,
-            logits_adv,
-            targets,
-            beta):
-    kl = torch.nn.KLDivLoss(size_average=False)
-    adv_probs = F.softmax(logits_adv, dim=1)
-    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
-    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
-    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
-    nat_probs = F.softmax(logits, dim=1)
-    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
-    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
-        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(beta) * loss_robust
-    return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
@@ -248,8 +241,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # training and testing
     for epoch in range(args.epoch):
-        rprint('\nEpoch: %d' % epoch, rank)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+        rprint('\nEpoch: %d' % (epoch+1), rank)
+        tau = adjust_tau(epoch)
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, tau, float('inf'))
         test(net, testloader, attack, rank)
 
     # destroy process
