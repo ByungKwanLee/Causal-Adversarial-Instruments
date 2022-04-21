@@ -246,8 +246,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack, tau, float('inf'))
         test(net, testloader, attack, rank)
 
-    # destroy process
-    dist.destroy_process_group()
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

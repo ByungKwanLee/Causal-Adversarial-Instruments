@@ -83,45 +83,6 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     if dataset == 'tiny':
         mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
         img_size = 64
-
-        # mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
-        # img_size = 64
-
-        # fix size
-        init_size = 48
-        decoder = RandomResizedCropRGBImageDecoder((init_size, init_size))
-
-        # for small dataset
-        paths = {
-            'train': f'../ffcv_data/{dataset}/{dataset}_train.beton',
-            'test': f'../ffcv_data/{dataset}/{dataset}_test.beton'
-        }
-        # for large dataset
-        loaders = {}
-        for name in ['train', 'test']:
-            if name == 'train':
-                image_pipeline: List[Operation] = [decoder,
-                                                   RandomHorizontalFlip()]
-            else:
-                image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
-
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(),
-                                               ToDevice_modified(torch.device(gpu), non_blocking=True)]
-
-            image_pipeline.extend([
-                ToTensor(),
-                ToDevice_modified(torch.device(gpu), non_blocking=True),
-                ToTorchImage(),
-                Normalize_and_Convert(torch.float16, True)
-            ])
-
-            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
-            loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                   num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
-                                   distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
-                                   seed=0)
-        return loaders['train'], loaders['test'], decoder
-
     if dataset == 'imagenet':
         # fix size
         init_size = 160

@@ -31,10 +31,10 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12357", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.3, type=float)
@@ -186,14 +186,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
             decoder.output_size = (res, res)
-        elif args.dataset=="tiny":
-            res = get_resolution(epoch=epoch, min_res=48, max_res=64, end_ramp=20, start_ramp=15)
-            decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler)
         test(net, testloader, lr_scheduler, rank)
-
-    # destroy process
-    dist.destroy_process_group()
 
 
 def run():
