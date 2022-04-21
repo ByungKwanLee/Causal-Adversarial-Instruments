@@ -226,8 +226,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' else 2 * len(trainloader),
-    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' else (args.epoch - 2) * len(trainloader))
+    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
+    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epoch):
@@ -235,14 +235,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
             decoder.output_size = (res, res)
-        elif args.dataset=="tiny":
-            res = get_resolution(epoch=epoch, min_res=40, max_res=48, end_ramp=25, start_ramp=18)
-            decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)
 
-    # destroy process
-    dist.destroy_process_group()
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

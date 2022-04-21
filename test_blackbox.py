@@ -89,9 +89,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # test
     test_blackbox(plain_net, adv_net, testloader, attack_list=['fgsm', 'bim', 'pgd', 'mim', 'cw_linf', 'fab', 'ap', 'dlr', 'auto'], rank=rank)
 
-    # destroy process
-    dist.destroy_process_group()
-
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
 

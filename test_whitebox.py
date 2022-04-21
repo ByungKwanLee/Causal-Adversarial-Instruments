@@ -77,9 +77,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # test
     test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'pgd', 'mim', 'cw_linf', 'ap', 'dlr', 'aa'], rank=rank)
 
-    # destroy process
-    dist.destroy_process_group()
-
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
 
