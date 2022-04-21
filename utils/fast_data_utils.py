@@ -84,7 +84,6 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
         img_size = 64
     if dataset == 'imagenet':
-
         # fix size
         init_size = 160
         orgin_size = 256
