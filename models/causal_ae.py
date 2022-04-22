@@ -38,18 +38,18 @@ class deconv_bn_relu(nn.Module):
         return x
 
 class CausalAE(nn.Module):
-    def __init__(self, dataset, z_dim=10, nc=512):
+    def __init__(self, ch=False):
         super(CausalAE, self).__init__()
-        self.z_dim = z_dim
-        self.nc = nc
 
-        if dataset == 'imagenet':
+        if ch:
             self.k_list = 3
-            self.c_list = [512, 512, 1024, 1024, 512, 512]
+            self.c_list = [640, 640, 1280, 1280, 640, 640]
+            self.nc = 640
 
         else:
             self.k_list = 3
             self.c_list = [512, 512, 1024, 1024, 512, 512]
+            self.nc = 512
 
         self.encoder = nn.Sequential(
             conv_bn_relu(in_ch=self.nc, out_ch=self.c_list[0], k_size=self.k_list, padding_size=1),
@@ -91,7 +91,7 @@ def kaiming_init(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
-def causal(dataset):
-    model = CausalAE(dataset)
+def causal(dataset, ch=False):
+    model = CausalAE(ch)
 
     return model

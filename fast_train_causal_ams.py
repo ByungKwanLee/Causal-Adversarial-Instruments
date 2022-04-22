@@ -30,12 +30,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='vgg', type=str)
 
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12353', type=str)
+parser.add_argument('--port', default='12351', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -43,7 +43,7 @@ parser.add_argument('--weight_decay', default=0.00001, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
-parser.add_argument('--lamb', default=10, type=int)
+parser.add_argument('--lamb', default=20, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -73,6 +73,7 @@ scaler = GradScaler()
 counter = 0
 log_dir = args.log_dir + f'{args.lamb}/'
 check_dir(log_dir)
+
 
 def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer, scaler, attack, rank, writer):
     global counter
@@ -223,7 +224,7 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         best_acc = pseudo_acc
 
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_F_%d_%s%s_best.t7' % (
+            torch.save(state, './checkpoint/pretrain/%s/%s_causal_ams_%d_%s%s_best.t7' % (
             args.dataset, args.dataset, args.lamb, args.network, args.depth))
 
             print('Saving~ ./checkpoint/pretrain/%s/%s_causal_F_%d_%s%s_best.t7' % (
@@ -241,23 +242,18 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print("Use GPU: {} for training".format(gpu_list[rank]))
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    if args.network == 'wide':
-        ch = True
-    else:
-        ch = False
-
     # init model and Distributed Data Parallel
     net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
     do_freeze(net)
 
-    c_net = get_network(network='causal', depth=None, dataset=args.dataset, ch=ch)
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset)
     c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
     c_net = c_net.to(memory_format=torch.channels_last).cuda()
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
 
-    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, ch=ch)
+    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset)
     z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
     z_net = z_net.to(memory_format=torch.channels_last).cuda()
     z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
@@ -283,12 +279,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
-    if args.dataset == 'imagenet':
-        c_optimizer = optim.AdamW([{'params': c_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-        inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
-    else:
-        c_optimizer = optim.AdamW([{'params': c_net.parameters()}], lr=args.learning_rate,  weight_decay=args.weight_decay, amsgrad=True)
-        inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate,  weight_decay=args.weight_decay, amsgrad=True)
+
+    c_optimizer = optim.AdamW([{'params': c_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
+    inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
 
     # tensorboard writer
     writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
@@ -301,6 +294,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
         causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimizer,scaler, attack, rank, writer)
         causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank)
+
+    # destroy process
+    dist.destroy_process_group()
 
 
 def run():
