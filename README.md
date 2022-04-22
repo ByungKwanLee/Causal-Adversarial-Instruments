@@ -31,8 +31,8 @@ on Volta GPU architecture.
 * [ ] **[GAIRAT]** batchsize (128), learning rate (), epoch (10)
 
 ### Mid-dimensional dataset (Tiny-ImageNet)
-* [ ] **[standard]** batchsize (128), learning rate (), epoch (30)
-* [ ] **[AT]**  batchsize (128), learning rate (), epoch (30)
+* [ ] **[standard]** batchsize (128), learning rate (0.3), epoch (30)
+* [ ] **[AT]**  batchsize (128), learning rate (0.05), epoch (30)
 * [ ] **[TRADES]** batchsize (128), learning rate (), epoch (10)
 * [ ] **[MART]** batchsize (128), learning rate (), epoch (10)
 * [ ] **[FAT]** batchsize (128), learning rate (), epoch (10)
