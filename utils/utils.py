@@ -154,24 +154,27 @@ def network_vis(fig, layer_info, f_type):
 def causal_vis(img, inv, label, dataset=None):
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
     ori_img = Image.fromarray((img * 255).astype(np.uint8))
-    ori_adv = Image.fromarray((inv[0] * 255).astype(np.uint8))
-    ori_causal = Image.fromarray((inv[1] * 255).astype(np.uint8))
-    ori_treat = Image.fromarray((inv[2] * 255).astype(np.uint8))
-    ori_inst = Image.fromarray((inv[3] * 255).astype(np.uint8))
+    ori_cln = Image.fromarray((inv[0] * 255).astype(np.uint8))
+    ori_adv = Image.fromarray((inv[1] * 255).astype(np.uint8))
+    ori_causal = Image.fromarray((inv[2] * 255).astype(np.uint8))
+    ori_treat = Image.fromarray((inv[3] * 255).astype(np.uint8))
+    ori_inst = Image.fromarray((inv[4] * 255).astype(np.uint8))
 
     ori_img = ori_img.resize((224, 224), Image.NEAREST)
+    ori_cln = ori_cln.resize((224, 224), Image.NEAREST)
     ori_adv = ori_adv.resize((224, 224), Image.NEAREST)
     ori_causal = ori_causal.resize((224, 224), Image.NEAREST)
     ori_treat = ori_treat.resize((224, 224), Image.NEAREST)
     ori_inst = ori_inst.resize((224, 224), Image.NEAREST)
 
-    bg_img = Image.new("RGB", (224 * 5 + 20 * 6, 224 * 1 + 40), color=(255, 255, 255))
+    bg_img = Image.new("RGB", (224 * 6 + 20 * 7, 224 * 1 + 40), color=(255, 255, 255))
 
     bg_img.paste(ori_img, (20, 20))
-    bg_img.paste(ori_adv, (224 * 1 + 20 * 2, 20))
-    bg_img.paste(ori_causal, (224 * 2 + 20 * 3, 20))
-    bg_img.paste(ori_treat, (224 * 3 + 20 * 4, 20))
-    bg_img.paste(ori_inst, (224 * 4 + 20 * 5, 20))
+    bg_img.paste(ori_cln, (224 * 1 + 20 * 2, 20))
+    bg_img.paste(ori_adv, (224 * 2 + 20 * 3, 20))
+    bg_img.paste(ori_causal, (224 * 3 + 20 * 4, 20))
+    bg_img.paste(ori_treat, (224 * 4 + 20 * 5, 20))
+    bg_img.paste(ori_inst, (224 * 5 + 20 * 6, 20))
 
     if dataset == 'svhn':
         o_label = [str(i) for i in range(10)]
@@ -187,17 +190,19 @@ def causal_vis(img, inv, label, dataset=None):
         pred2 = lines[label[2]].split(',')[0].split(':')[1].split("'")[1]
         pred3 = lines[label[3]].split(',')[0].split(':')[1].split("'")[1]
         pred4 = lines[label[4]].split(',')[0].split(':')[1].split("'")[1]
-        o_label = [target, pred1, pred2, pred3, pred4]
-        label = [0, 1, 2, 3, 4]
+        pred5 = lines[label[5]].split(',')[0].split(':')[1].split("'")[1]
+        o_label = [target, pred1, pred2, pred3, pred4, pred5]
+        label = [0, 1, 2, 3, 4, 5]
         f.close()
 
     draw = ImageDraw.Draw(bg_img)
 
     draw.text((20, 0), 'Image: ' + str(o_label[label[0]]), fill='blue', font=selectedFont)
-    draw.text((224 * 1 + 20 * 2, 0), 'ADV Inv: ' + str(o_label[label[1]]), fill='red', font=selectedFont)
-    draw.text((224 * 2 + 20 * 3, 0), 'Causal Inv: ' + str(o_label[label[2]]), fill='red', font=selectedFont)
-    draw.text((224 * 3 + 20 * 4, 0), 'Treat Inv: ' + str(o_label[label[3]]), fill='red', font=selectedFont)
-    draw.text((224 * 4 + 20 * 5, 0), 'Inst Inv: ' + str(o_label[label[4]]), fill='red', font=selectedFont)
+    draw.text((224 * 1 + 20 * 2, 0), 'Clean Inv: ' + str(o_label[label[1]]), fill='red', font=selectedFont)
+    draw.text((224 * 1 + 20 * 2, 0), 'Adv Inv: ' + str(o_label[label[2]]), fill='red', font=selectedFont)
+    draw.text((224 * 2 + 20 * 3, 0), 'Causal Inv: ' + str(o_label[label[3]]), fill='red', font=selectedFont)
+    draw.text((224 * 3 + 20 * 4, 0), 'Treat Inv: ' + str(o_label[label[4]]), fill='red', font=selectedFont)
+    draw.text((224 * 4 + 20 * 5, 0), 'Inst Inv: ' + str(o_label[label[5]]), fill='red', font=selectedFont)
 
     return bg_img
 

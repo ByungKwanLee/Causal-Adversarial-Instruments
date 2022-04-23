@@ -22,14 +22,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=1, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -62,7 +62,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_ams_20_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_10_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -154,6 +154,7 @@ def visualizaition():
         adv_inputs = attack(inputs, targets)
 
         adv_feature = net(adv_inputs, pop=True)
+
         _, adv_pred = net(adv_feature, int=True).max(1)
 
         if targets.item() != adv_pred.item():
@@ -165,17 +166,19 @@ def visualizaition():
             treat_feature = cln_feature + c_net(residual)
             causal_feature = cln_feature + c_net(worst_feature)
 
+            _, cln_pred = net(cln_feature, int=True).max(1)
             _, causal_pred = net(causal_feature, int=True).max(1)
             _, treat_pred = net(treat_feature, int=True).max(1)
             _, inst_pred = net(inst_feature, int=True).max(1)
 
+            cln_inv = SpInversion(cln_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             inst_inv = SpInversion(inst_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
 
-            label = [targets.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
-            inv = [adv_inv, causal_inv, treat_inv, inst_inv]
+            label = [targets.item(), cln_pred.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
+            inv = [cln_inv, adv_inv, causal_inv, treat_inv, inst_inv]
 
             save_img = causal_vis(inputs, inv, label, dataset=args.dataset)
             save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
@@ -302,8 +305,8 @@ def net_visualize():
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
-    #visualizaition()
-    class_prediction()
+    visualizaition()
+    #class_prediction()
     #test()
 
 

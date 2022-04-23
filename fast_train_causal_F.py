@@ -30,12 +30,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='wide', type=str)
 
 parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12353', type=str)
+parser.add_argument('--port', default='12355', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
