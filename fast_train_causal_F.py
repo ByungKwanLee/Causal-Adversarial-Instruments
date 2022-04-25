@@ -31,11 +31,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--network', default='resnet', type=str)
 
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--port', default='12352', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -44,6 +44,7 @@ parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
 parser.add_argument('--lamb', default=10, type=int)
+#parser.add_argument('--lamb', default=0.1, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -172,11 +173,11 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
     z_net.eval()
 
     test_loss = 0
-    correct = 0
+    adv_correct, inst_correct, treat_correct, causal_correct = 0, 0, 0, 0
     total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss / (0 + 1), 0, correct, total))
+    desc = ('[Test/PGD] Loss: %.3f | Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%% (%d/%d)'
+            % (test_loss / (0 + 1), 0, adv_correct, inst_correct, treat_correct, causal_correct, total))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -187,47 +188,54 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         with autocast():
             adv_feature = net(adv_inputs, pop=True)
             cln_feature = net(inputs, pop=True)
-
             residual = adv_feature - cln_feature
 
+            inst_feature = z_net(residual)
             treat_feature = c_net(residual)
-            treat_output = net(cln_feature + treat_feature, int=True)
+            causal_feature = c_net(inst_feature)
 
+            adv_output = net(adv_feature, int=True)
+            inst_output = net(cln_feature + inst_feature, int=True)
+            treat_output = net(cln_feature + treat_feature, int=True)
+            causal_output = net(cln_feature + causal_feature, int=True)
             loss = criterion(treat_output, targets)
 
         test_loss += loss.item()
-        _, predicted = treat_output.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        _, adv_predicted = adv_output.max(1)
+        _, inst_predicted = inst_output.max(1)
+        _, treat_predicted = treat_output.max(1)
+        _, causal_predicted = causal_output.max(1)
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        total += targets.size(0)
+        adv_correct += adv_predicted.eq(targets).sum().item()
+        inst_correct += inst_predicted.eq(targets).sum().item()
+        treat_correct += treat_predicted.eq(targets).sum().item()
+        causal_correct += causal_predicted.eq(targets).sum().item()
+
+        desc = ('[Test/PGD] Loss: %.3f | Adv: %.1f%% | Inst: %.1f%% | Treat: %.1f%% | Causal: %.1f%% (%d/%d)'
+                % (test_loss / (batch_idx + 1), 100. * adv_correct / total, 100. * inst_correct / total,
+                   100. * treat_correct / total, 100. * causal_correct / total, treat_correct, total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
-    pseudo_acc = 100. * correct / total
+    state = {
+        'c_net': c_net.state_dict(),
+        'z_net': z_net.state_dict(),
+        'epoch': epoch,
+        'loss': loss,
+        'args': args
+    }
+    if not os.path.isdir('checkpoint'):
+        os.mkdir('checkpoint')
+    if not os.path.isdir('checkpoint/pretrain'):
+        os.mkdir('checkpoint/pretrain')
 
-    if pseudo_acc > best_acc:
-        state = {
-            'c_net': c_net.state_dict(),
-            'z_net': z_net.state_dict(),
-            'acc': pseudo_acc,
-            'epoch': epoch,
-            'loss': loss,
-            'args': args
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        if not os.path.isdir('checkpoint/pretrain'):
-            os.mkdir('checkpoint/pretrain')
-        best_acc = pseudo_acc
+    if rank == 0:
+        torch.save(state, './checkpoint/pretrain/%s/%s_causal_%d_%s%s_E%d_best.t7' % (
+        args.dataset, args.dataset, args.lamb, args.network, args.depth, epoch))
 
-        if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_causal_F_%d_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.lamb, args.network, args.depth))
-
-            print('Saving~ ./checkpoint/pretrain/%s/%s_causal_F_%d_%s%s_best.t7' % (
-            args.dataset, args.dataset, args.lamb, args.network, args.depth))
+        print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best_E%d.t7' % (
+        args.dataset, args.dataset, args.lamb, args.network, args.depth, epoch))
 
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):

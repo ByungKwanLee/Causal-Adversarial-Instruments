@@ -13,7 +13,8 @@ class conv_bn_relu(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=k_size, padding=padding_size),
             nn.BatchNorm2d(out_ch),
-            nn.LeakyReLU(0.2)
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3)
         )
 
     def forward(self, x):
@@ -32,7 +33,8 @@ class deconv_bn_relu(nn.Module):
             self.deconv = nn.Sequential(
                 nn.ConvTranspose2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm2d(out_ch),
-                nn.LeakyReLU(0.2)
+                nn.LeakyReLU(0.2),
+                nn.Dropout(0.3)
             )
 
     def forward(self, x):

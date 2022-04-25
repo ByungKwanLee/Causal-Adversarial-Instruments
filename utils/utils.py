@@ -65,7 +65,9 @@ def get_onehot(adv_output, targets):
 def show_with_var(pred_buf, dataset):
     if dataset == 'imagenet':
         object_categories = np.linspace(0, 999, num=1000)
-    elif dataset == 'cifar10' or 'svhn':
+    elif dataset == 'cifar10':
+        object_categories = np.linspace(0, 9, num=10)
+    elif dataset == 'svhn':
         object_categories = np.linspace(0, 9, num=10)
     elif dataset == 'cifar100':
         object_categories = np.linspace(0, 99, num=100)
@@ -199,10 +201,10 @@ def causal_vis(img, inv, label, dataset=None):
 
     draw.text((20, 0), 'Image: ' + str(o_label[label[0]]), fill='blue', font=selectedFont)
     draw.text((224 * 1 + 20 * 2, 0), 'Clean Inv: ' + str(o_label[label[1]]), fill='red', font=selectedFont)
-    draw.text((224 * 1 + 20 * 2, 0), 'Adv Inv: ' + str(o_label[label[2]]), fill='red', font=selectedFont)
-    draw.text((224 * 2 + 20 * 3, 0), 'Causal Inv: ' + str(o_label[label[3]]), fill='red', font=selectedFont)
-    draw.text((224 * 3 + 20 * 4, 0), 'Treat Inv: ' + str(o_label[label[4]]), fill='red', font=selectedFont)
-    draw.text((224 * 4 + 20 * 5, 0), 'Inst Inv: ' + str(o_label[label[5]]), fill='red', font=selectedFont)
+    draw.text((224 * 2 + 20 * 3, 0), 'Adv Inv: ' + str(o_label[label[2]]), fill='red', font=selectedFont)
+    draw.text((224 * 3 + 20 * 4, 0), 'Causal Inv: ' + str(o_label[label[3]]), fill='red', font=selectedFont)
+    draw.text((224 * 4 + 20 * 5, 0), 'Treat Inv: ' + str(o_label[label[4]]), fill='red', font=selectedFont)
+    draw.text((224 * 5 + 20 * 6, 0), 'Inst Inv: ' + str(o_label[label[5]]), fill='red', font=selectedFont)
 
     return bg_img
 

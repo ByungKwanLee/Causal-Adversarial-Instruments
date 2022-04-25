@@ -22,14 +22,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=1, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -47,10 +47,15 @@ os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
 # init dataloader
 _, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False, shuffle=True)
 
+if args.network == 'wide':
+    ch = True
+else:
+    ch = False
+
 # init model
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset)
-c_net = get_network(network='causal', depth=None, dataset=args.dataset)
-z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset)
+c_net = get_network(network='causal', depth=None, dataset=args.dataset, ch=ch)
+z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, ch=ch)
 
 net = net.cuda()
 c_net = c_net.cuda()
@@ -62,7 +67,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_10_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_0_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -190,6 +195,9 @@ def class_prediction():
     z_net.eval()
     attack_module = {}
 
+    print("==============================INFO==============================\n Dataset: %s | Network: %s | Lamb: %.2f" % (
+    args.dataset, args.network, float(causal_checkpoint_name.split('/')[-1].split('F_')[-1].split('_')[0])))
+
     for attack_name in ['pgd']:
         args.attack = attack_name
         attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
@@ -201,7 +209,9 @@ def class_prediction():
 
         if args.dataset == 'imagenet':
             pred_buf = torch.zeros(6, 1000).cuda()
-        elif args.dataset == 'cifar10' or 'svhn':
+        elif args.dataset == 'cifar10':
+            pred_buf = torch.zeros(6, 10).cuda()
+        elif args.dataset == 'svhn':
             pred_buf = torch.zeros(6, 10).cuda()
         elif args.dataset == 'cifar100':
             pred_buf = torch.zeros(6, 100).cuda()
@@ -305,8 +315,8 @@ def net_visualize():
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
-    visualizaition()
-    #class_prediction()
+    #visualizaition()
+    class_prediction()
     #test()
 
 
