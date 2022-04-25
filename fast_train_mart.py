@@ -28,17 +28,17 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.01, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=10, type=int)
+parser.add_argument('--epoch', default=6, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -81,7 +81,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         with autocast():
             outputs = net(inputs)
             adv_outputs = net(adv_inputs)
-            loss = mart_loss(outputs, adv_outputs, targets, beta=6.0)
+            loss = mart_loss(outputs, adv_outputs, targets)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -186,9 +186,8 @@ def test(net, testloader, attack, rank):
 
 def mart_loss(logits,
             logits_adv,
-            targets,
-            beta):
-    kl = torch.nn.KLDivLoss(size_average=False)
+            targets):
+    kl = torch.nn.KLDivLoss(reduction='none')
     adv_probs = F.softmax(logits_adv, dim=1)
     tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
     new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
@@ -197,7 +196,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(beta) * loss_robust
+    loss = loss_adv + float(4) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
