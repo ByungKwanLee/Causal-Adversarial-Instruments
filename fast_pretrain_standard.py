@@ -35,6 +35,7 @@ parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12357", type=str)
+
 # learning parameter
 parser.add_argument('--learning_rate', default=0.3, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
