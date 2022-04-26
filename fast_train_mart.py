@@ -34,7 +34,7 @@ parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.01, type=float)
+parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
