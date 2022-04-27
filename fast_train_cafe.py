@@ -184,10 +184,10 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_cafe_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_cafe_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
 
