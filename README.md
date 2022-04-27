@@ -28,6 +28,7 @@ on Volta GPU architecture.
 * [x] **[TRADES]** batchsize (128), learning rate (0.001), epoch (6), beta (2)
 * [x] **[MART]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
 * [x] **[AWP]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
+* [ ] **[CAFE]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
 
 ### Mid-dimensional dataset (Tiny-ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.3), epoch (30)
@@ -35,6 +36,7 @@ on Volta GPU architecture.
 * [ ] **[TRADES]** batchsize (128), learning rate (0.001), epoch (6), beta (2)
 * [ ] **[MART]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
 * [ ] **[AWP]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
+* [ ] **[CAFE]** batchsize (128), learning rate (0.001), epoch (6), beta(5)
 
 ### High-dimensional dataset (ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.1), epoch (30)
