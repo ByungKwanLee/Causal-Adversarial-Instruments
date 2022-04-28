@@ -27,7 +27,7 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)

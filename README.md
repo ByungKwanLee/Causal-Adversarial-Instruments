@@ -22,7 +22,7 @@ on Volta GPU architecture.
 ---
 
 ## Hyper-Parameter Settings
-### Low-dimensional dataset (CIFAR-10/SVHN/CIFAR-100)
+### Low-dimensional dataset (CIFAR-10/SVHN)
 * [x] **[standard]** batchsize (128), learning rate (0.3), epoch (30)
 * [x] **[AT]** batchsize (128), learning rate (0.1), epoch (30)
 * [x] **[TRADES]** batchsize (128), learning rate (0.001), epoch (6), beta (2)

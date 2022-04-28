@@ -28,10 +28,10 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12300", type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12200", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
