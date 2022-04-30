@@ -1,4 +1,5 @@
 # Import built-in module
+
 import argparse
 import warnings
 import math
@@ -30,12 +31,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
 
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12352', type=str)
+parser.add_argument('--port', default='12359', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -44,7 +45,6 @@ parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
 parser.add_argument('--lamb', default=10, type=int)
-#parser.add_argument('--lamb', default=0.1, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -98,15 +98,15 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             cln_feature = net(inputs, pop=True)
             residual = adv_feature - cln_feature
 
-            adv_output = net(adv_feature, int=True)
+            adv_output = net(adv_feature.clone(), int=True)
             onehot_target = get_onehot(adv_output, targets)
 
-            inst_feature = z_net(residual)
-            inst_output = net(cln_feature + inst_feature, int=True)
+            inst_feature = z_net(residual.clone())
+            inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
 
             causal_feature = c_net(inst_feature)
-            causal_output = net(cln_feature + causal_feature, int=True)
-            treat_output = net(cln_feature + c_net(residual), int=True)
+            causal_output = net((cln_feature.clone() + causal_feature.clone()), int=True)
+            treat_output = net(cln_feature.clone() + c_net(residual).clone(), int=True)
 
             reg_loss = args.lamb * ((inst_feature - residual) ** 2).mean()
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
@@ -121,10 +121,10 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         # Accerlating forward propagation
         with autocast():
             inst_feature = z_net(residual)
-            inst_output = net(cln_feature + inst_feature, int=True)
+            inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
 
             causal_feature = c_net(inst_feature)
-            causal_output = net(cln_feature + causal_feature, int=True)
+            causal_output = net(cln_feature.clone() + causal_feature.clone(), int=True)
 
             recon_loss = ((c_net(residual) - residual) ** 2).mean()
             causal_loss = (onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
@@ -194,10 +194,10 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
             treat_feature = c_net(residual)
             causal_feature = c_net(inst_feature)
 
-            adv_output = net(adv_feature, int=True)
-            inst_output = net(cln_feature + inst_feature, int=True)
-            treat_output = net(cln_feature + treat_feature, int=True)
-            causal_output = net(cln_feature + causal_feature, int=True)
+            adv_output = net(adv_feature.clone(), int=True)
+            inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
+            treat_output = net(cln_feature.clone() + treat_feature.clone(), int=True)
+            causal_output = net(cln_feature.clone() + causal_feature.clone(), int=True)
             loss = criterion(treat_output, targets)
 
         test_loss += loss.item()
@@ -231,12 +231,11 @@ def causal_test(epoch, net, c_net, z_net, testloader, criterion, attack, rank):
         os.mkdir('checkpoint/pretrain')
 
     if rank == 0:
-        torch.save(state, './checkpoint/pretrain/%s/%s_causal_%d_%s%s_E%d_best.t7' % (
+        torch.save(state, './checkpoint/pretrain/%s/causal/%s_causal_%d_%s%s_E%d_best.t7' % (
         args.dataset, args.dataset, args.lamb, args.network, args.depth, epoch))
 
-        print('Saving~ ./checkpoint/pretrain/%s/%s_causal_%d_%s%s_best_E%d.t7' % (
+        print('Saving~ ./checkpoint/pretrain/%s/causal/%s_causal_%d_%s%s_best_E%d.t7' % (
         args.dataset, args.dataset, args.lamb, args.network, args.depth, epoch))
-
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # print configuration
@@ -282,7 +281,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader
-    if args.dataset == 'imagenet':
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
 
