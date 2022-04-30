@@ -3,18 +3,15 @@ import argparse
 import warnings
 warnings.filterwarnings(action='ignore')
 
-# Import torch
 import torch.optim as optim
 import torch.distributed as dist
 
 # Import Custom Utils
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
-from utils.utils import *
 
 # attack loader
-# from attack.attack import attack_loader
-from attack.fastattack import attack_loader
+from utils.utils import *
 
 # Accelerating forward and backward
 from torch.cuda.amp import GradScaler, autocast
@@ -27,11 +24,11 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12201", type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12357", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
@@ -61,9 +58,9 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, z_net, trainloader, optimizer, lr_scheduler, scaler, attack, cafep):
     net.train()
+    z_net.eval()
     train_loss = 0
     correct = 0
     total = 0
@@ -76,17 +73,31 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
+        # calculate cafep
+        cafep_obj = cafep.calc_cafep(inputs=inputs, adv_inputs=adv_inputs, targets=targets)
+        cafep.perturb(cafep_obj)
+
         # Accerlating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            adv_outputs = net(adv_inputs)
+
+            clean_feature = net(inputs, pop=True)
+            adv_feature = net(adv_inputs, pop=True)
+
+            outputs = net(clean_feature, int=True)
+            adv_outputs = net(adv_feature, int=True)
+
+            # inst_outputs = net(clean_feature + z_net(adv_feature-clean_feature), int=True)
+
             loss = mart_loss(outputs, adv_outputs, targets)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        # cafep restore
+        cafep.restore(cafep_obj)
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
@@ -177,12 +188,13 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_cafe_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_cafe_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
+
 
 def mart_loss(logits,
             logits_adv,
@@ -219,6 +231,31 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    proxy = get_network(network=args.network,
+                      depth=args.depth,
+                      dataset=args.dataset)
+    proxy = torch.nn.SyncBatchNorm.convert_sync_batchnorm(proxy)
+    proxy = proxy.to(memory_format=torch.channels_last).cuda()
+    proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
+
+
+    # init causal net and Distributed Data Parallel
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset, ch=True if args.network=='wide' else False)
+    c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
+    c_net = c_net.to(memory_format=torch.channels_last).cuda()
+    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
+    do_freeze(c_net)
+
+    z_net = get_network(network='instrument', depth=args.depth, dataset=args.dataset, ch=True if args.network=='wide' else False)
+    z_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(z_net)
+    z_net = z_net.to(memory_format=torch.channels_last).cuda()
+    z_net = torch.nn.parallel.DistributedDataParallel(z_net, device_ids=[rank], output_device=[rank])
+    do_freeze(z_net)
+
+
+    # cafep adversary
+    cafep = CAFEPerturb(model=net, proxy=proxy, c_net=c_net, lr=0.01, gamma=1e-3, autocast=autocast, GradScaler=GradScaler)
+
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
@@ -228,8 +265,18 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
+    proxy.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded Adv checkpoint..', rank)
+
+    # Load Causal Network
+    checkpoint_name = 'checkpoint/causal/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    c_net.load_state_dict(checkpoint['c_net'])
+    z_net.load_state_dict(checkpoint['z_net'])
+    rprint(f'==> {checkpoint_name}', rank)
+    rprint('==> Successfully Loaded Causal checkpoint..', rank)
+
 
     # Attack loader
     if args.dataset == 'tiny':
@@ -247,7 +294,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+        train(net, z_net, trainloader, optimizer, lr_scheduler, scaler, attack, cafep)
         test(net, testloader, attack, rank)
 
 
