@@ -29,7 +29,7 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=1, type=float)
+parser.add_argument('--batch_size', default=32, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -67,7 +67,8 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_10_%s%s_E1_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/final_param/%s_causal_%s%s_best.t7' % (args.dataset, args.network, args.depth)
+# causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_1_%s%s_E2_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -90,7 +91,10 @@ def test():
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
     for attack_name in ['fgsm']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+        if args.dataset == 'imagenet' or args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     for key in attack_module:
         total = 0
@@ -150,8 +154,10 @@ def visualizaition():
 
     check_dir(save_dir)
 
-
-    attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+        attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+    else:
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -197,9 +203,13 @@ def class_prediction():
 
     print("==============================INFO==============================\n Dataset: %s | Network: %s" % (args.dataset, args.network))
 
-    for attack_name in ['pgd']:
+    for attack_name in ['cw_linf']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+
+        if args.dataset == 'imagenet' or args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     for key in attack_module:
         total = 0
@@ -314,12 +324,7 @@ def net_visualize():
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
-    visualizaition()
-    #class_prediction()
+    #visualizaition()
+    class_prediction()
     #test()
-
-
-
-
-
 

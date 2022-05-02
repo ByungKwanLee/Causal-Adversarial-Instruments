@@ -31,12 +31,12 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12359', type=str)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--port', default='12357', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -44,7 +44,7 @@ parser.add_argument('--weight_decay', default=0.00001, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=10, type=int)
-parser.add_argument('--lamb', default=10, type=int)
+parser.add_argument('--lamb', default=20, type=int)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -283,7 +283,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'imagenet' or args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
 
     else:
         rprint('PGD training', rank)

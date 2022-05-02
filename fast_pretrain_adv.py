@@ -218,7 +218,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'imagenet' or args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else args.eps, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
