@@ -79,7 +79,8 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         optimizer.zero_grad()
         with autocast():
             outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets) if args.dataset!='tiny' else SmoothCrossEntropyLoss(reduction='mean', smoothing=0.1)
+            loss = F.cross_entropy(outputs, targets) if args.dataset!='tiny' \
+                else SmoothCrossEntropyLoss(reduction='mean', smoothing=0.1)(outputs, targets)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
