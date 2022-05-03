@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
@@ -79,8 +79,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         optimizer.zero_grad()
         with autocast():
             outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets) if args.dataset!='tiny' \
-                else SmoothCrossEntropyLoss(reduction='mean', smoothing=0.1)(outputs, targets)
+            loss = F.cross_entropy(outputs, targets)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -231,7 +230,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
-    for epoch in range(args.epoch):
+    for epoch in range(args.epoch if args.dataset != 'tiny' else 10):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
