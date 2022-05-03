@@ -27,14 +27,14 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.05, type=float)
+parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -75,13 +75,13 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
 
-        # Accerlating forward propagation
+        # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
 
-        # Accerlating backward propagation
+        # Accelerating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
