@@ -27,9 +27,9 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12201", type=str)
 
@@ -196,7 +196,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(5) * loss_robust
+    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -224,7 +224,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
-    # Load Plain Network
+    # Load ADV Network
     checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
@@ -234,7 +234,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=0.03, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

@@ -83,6 +83,38 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     if dataset == 'tiny':
         mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
         img_size = 64
+
+        # for small dataset
+        paths = {
+            'train': f'../ffcv_data/{dataset}/{dataset}_train.beton',
+            'test': f'../ffcv_data/{dataset}/{dataset}_test.beton'
+        }
+
+        loaders = {}
+        for name in ['train', 'test']:
+            image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(torch.device(gpu)),
+                                               Squeeze()]
+            if name == 'train':
+                image_pipeline.extend([
+                    RandomHorizontalFlip(),
+                    RandomTranslate(padding=int(img_size / 8.), fill=tuple(map(int, mean))),
+                ])
+            image_pipeline.extend([
+                ToTensor(),
+                ToDevice_modified(torch.device(gpu), non_blocking=True),
+                ToTorchImage(),
+                Normalize_and_Convert(torch.float16, True)
+            ])
+
+            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
+
+            loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
+                                   num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
+                                   pipelines={'image': image_pipeline, 'label': label_pipeline})
+
+        return loaders['train'], loaders['test'], decoder
+
     if dataset == 'imagenet':
         # fix size
         init_size = 160
@@ -147,7 +179,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
             order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                num_workers=num_workers, order=order, drop_last=(name == 'train'),
+                                num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
                                    pipelines={'image': image_pipeline, 'label': label_pipeline})
 
 

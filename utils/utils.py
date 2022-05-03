@@ -244,21 +244,27 @@ def feature_vis(img, inv, label, dataset=None):
     return bg_img
 
 
-class CrossEntropyLabelSmoothing(nn.Module):
-    def __init__(self, label_smoothing=0.0, dim=-1):
-        super(CrossEntropyLabelSmoothing, self).__init__()
-        self.confidence = 1.0 - label_smoothing
-        self.smoothing = label_smoothing
-        self.dim = dim
+class SmoothCrossEntropyLoss(torch.nn.Module):
+    """
+    Soft cross entropy loss with label smoothing.
+    """
+    def __init__(self, smoothing=0.0, reduction='mean'):
+        super(SmoothCrossEntropyLoss, self).__init__()
+        self.smoothing = smoothing
+        self.reduction = reduction
 
-    def forward(self, pred, target):
-        cls = pred.shape[0]
-        pred = pred.log_softmax(dim=self.dim)
-        with torch.no_grad():
-            true_dist = torch.zeros_like(pred)
-            true_dist.fill_(self.smoothing / (cls - 1))
-            true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
-        return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
+    def forward(self, input, target):
+        num_classes = input.shape[1]
+        if target.ndim == 1:
+            target = torch.nn.functional.one_hot(target, num_classes)
+        target = (1. - self.smoothing) * target + self.smoothing / num_classes
+        logprobs = torch.nn.functional.log_softmax(input, dim=1)
+        loss = - (target * logprobs).sum(dim=1)
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
 
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
@@ -275,21 +281,6 @@ def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
     final_res = int(np.round(interp[0] / 32)) * 32
 
     return final_res
-
-def get_randomresizedcrop(epoch, min_res, max_res, end_ramp, start_ramp):
-    assert min_res <= max_res
-
-    if epoch <= start_ramp:
-        return torchvision.transforms.Resize((min_res, min_res))
-
-    if epoch >= end_ramp:
-        return torchvision.transforms.Resize((max_res, max_res))
-
-    # otherwise, linearly interpolate to the nearest multiple of 32
-    interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
-    final_res = int(np.round(interp[0] / 32)) * 32
-
-    return torchvision.transforms.RandomResizedCrop((final_res, final_res))
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -429,45 +420,6 @@ class AdvWeightPerturb(object):
         self.proxy_optim.zero_grad()
         with self.autocast():
             loss = - F.cross_entropy(self.proxy(adv_inputs), targets)
-
-        # Accerlating backward propagation
-        self.scaler.scale(loss).backward()
-        self.scaler.step(self.proxy_optim)
-        self.scaler.update()
-
-        # the adversary weight perturb
-        diff = diff_in_weights(self.model, self.proxy)
-        return diff
-
-    def perturb(self, diff):
-        add_into_weights(self.model, diff, coeff=1.0 * self.gamma)
-
-    def restore(self, diff):
-        add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
-
-
-class CAFEPerturb(object):
-    def __init__(self, model, proxy, c_net, lr, gamma, autocast, GradScaler):
-        super(CAFEPerturb, self).__init__()
-        self.model = model
-        self.proxy = proxy
-        self.c_net = c_net
-        self.gamma = gamma
-        self.proxy_optim = torch.optim.SGD(proxy.parameters(), lr=lr)
-        self.autocast = autocast
-        self.scaler = GradScaler()
-
-    def calc_cafep(self, inputs, adv_inputs, targets):
-        self.proxy.load_state_dict(self.model.state_dict())
-        self.proxy.train()
-        self.c_net.eval()
-
-        self.proxy_optim.zero_grad()
-        with self.autocast():
-            clean_feature = self.proxy(inputs, pop=True)
-            adv_feature = self.proxy(adv_inputs, pop=True)
-            casual_feature = self.proxy(clean_feature + self.c_net(adv_feature-clean_feature), int=True)
-            loss = - F.cross_entropy(casual_feature, targets)
 
         # Accerlating backward propagation
         self.scaler.scale(loss).backward()
