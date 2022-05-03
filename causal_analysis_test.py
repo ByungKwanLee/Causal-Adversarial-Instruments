@@ -22,14 +22,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=32, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -67,7 +67,8 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_F_0_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/final_param/%s_causal_%s%s_best.t7' % (args.dataset, args.network, args.depth)
+# causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_1_%s%s_E2_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 c_net_checkpoint = torch.load(causal_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['c_net']
@@ -88,9 +89,12 @@ def test():
 
     attack_module = {}
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
-    for attack_name in ['pgd']:
+    for attack_name in ['fgsm']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+        if args.dataset == 'imagenet' or args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     for key in attack_module:
         total = 0
@@ -105,16 +109,16 @@ def test():
             cln_feature = net(inputs, pop=True)
             residual = adv_feature - cln_feature
 
-            adv_output = net(adv_feature, int=True)
+            adv_output = net(adv_feature.clone(), int=True)
 
             inst_feature = z_net(residual)
-            inst_output = net(cln_feature + inst_feature, int=True)
+            inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
 
             treat_feature = cln_feature + c_net(residual)
-            treat_output = net(treat_feature, int=True)
+            treat_output = net(treat_feature.clone(), int=True)
 
             causal_feature = c_net(inst_feature)
-            causal_output = net(cln_feature + causal_feature, int=True)
+            causal_output = net(cln_feature.clone() + causal_feature.clone(), int=True)
 
             _, adv_predicted = adv_output.max(1)
             _, inst_predicted = inst_output.max(1)
@@ -132,9 +136,9 @@ def test():
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
-            if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
-                if batch_idx >= int(len(testloader) * 0.3):
-                    break
+            # if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
+            #     if batch_idx >= int(len(testloader) * 0.3):
+            #         break
 
 def visualizaition():
     net.eval()
@@ -150,8 +154,10 @@ def visualizaition():
 
     check_dir(save_dir)
 
-
-    attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+        attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+    else:
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -160,7 +166,7 @@ def visualizaition():
 
         adv_feature = net(adv_inputs, pop=True)
 
-        _, adv_pred = net(adv_feature, int=True).max(1)
+        _, adv_pred = net(adv_feature.clone(), int=True).max(1)
 
         if targets.item() != adv_pred.item():
             cln_feature = net(inputs, pop=True)
@@ -171,10 +177,10 @@ def visualizaition():
             treat_feature = cln_feature + c_net(residual)
             causal_feature = cln_feature + c_net(worst_feature)
 
-            _, cln_pred = net(cln_feature, int=True).max(1)
-            _, causal_pred = net(causal_feature, int=True).max(1)
-            _, treat_pred = net(treat_feature, int=True).max(1)
-            _, inst_pred = net(inst_feature, int=True).max(1)
+            _, cln_pred = net(cln_feature.clone(), int=True).max(1)
+            _, causal_pred = net(causal_feature.clone(), int=True).max(1)
+            _, treat_pred = net(treat_feature.clone(), int=True).max(1)
+            _, inst_pred = net(inst_feature.clone(), int=True).max(1)
 
             cln_inv = SpInversion(cln_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
             adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
@@ -195,12 +201,15 @@ def class_prediction():
     z_net.eval()
     attack_module = {}
 
-    print("==============================INFO==============================\n Dataset: %s | Network: %s | Lamb: %.2f" % (
-    args.dataset, args.network, float(causal_checkpoint_name.split('/')[-1].split('F_')[-1].split('_')[0])))
+    print("==============================INFO==============================\n Dataset: %s | Network: %s" % (args.dataset, args.network))
 
-    for attack_name in ['pgd']:
+    for attack_name in ['cw_linf']:
         args.attack = attack_name
-        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 0.03, steps=args.steps)
+
+        if args.dataset == 'imagenet' or args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     for key in attack_module:
         total = 0
@@ -228,17 +237,17 @@ def class_prediction():
             cln_feature = net(inputs, pop=True)
             residual = adv_feature - cln_feature
 
-            adv_output = net(adv_feature, int=True)
-            cln_output = net(cln_feature, int=True)
+            adv_output = net(adv_feature.clone(), int=True)
+            cln_output = net(cln_feature.clone(), int=True)
 
             inst_feature = z_net(residual)
-            inst_output = net(cln_feature + inst_feature, int=True)
+            inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
 
             treat_feature = cln_feature + c_net(residual)
-            treat_output = net(treat_feature, int=True)
+            treat_output = net(treat_feature.clone(), int=True)
 
             causal_feature = c_net(inst_feature)
-            causal_output = net(cln_feature + causal_feature, int=True)
+            causal_output = net(cln_feature.clone() + causal_feature.clone(), int=True)
 
             pred_buf[0] += get_pseudo(cln_output).sum(0)
             pred_buf[1] += get_pseudo(adv_output).sum(0)
@@ -266,7 +275,7 @@ def class_prediction():
             prog_bar.set_description(desc, refresh=True)
 
         img = show_with_var(pred_buf, args.dataset)
-        img.save('stat_%s.png' %(str(causal_checkpoint_name.split('/')[-1].split('.')[0])))
+        img.save('stat_%s_%s.png'%(str(attack_name), str(causal_checkpoint_name.split('/')[-1].split('.')[0])))
 
 def net_visualize():
     net.eval()
@@ -318,9 +327,4 @@ if __name__ == '__main__':
     #visualizaition()
     class_prediction()
     #test()
-
-
-
-
-
 
