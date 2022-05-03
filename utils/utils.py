@@ -337,7 +337,7 @@ def test_whitebox(net, testloader, attack_list, rank):
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=10) \
                                                                                 if attack_name != 'plain' else None
     for key in attack_module:
         total = 0
@@ -429,45 +429,6 @@ class AdvWeightPerturb(object):
         self.proxy_optim.zero_grad()
         with self.autocast():
             loss = - F.cross_entropy(self.proxy(adv_inputs), targets)
-
-        # Accerlating backward propagation
-        self.scaler.scale(loss).backward()
-        self.scaler.step(self.proxy_optim)
-        self.scaler.update()
-
-        # the adversary weight perturb
-        diff = diff_in_weights(self.model, self.proxy)
-        return diff
-
-    def perturb(self, diff):
-        add_into_weights(self.model, diff, coeff=1.0 * self.gamma)
-
-    def restore(self, diff):
-        add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
-
-
-class CAFEPerturb(object):
-    def __init__(self, model, proxy, c_net, lr, gamma, autocast, GradScaler):
-        super(CAFEPerturb, self).__init__()
-        self.model = model
-        self.proxy = proxy
-        self.c_net = c_net
-        self.gamma = gamma
-        self.proxy_optim = torch.optim.SGD(proxy.parameters(), lr=lr)
-        self.autocast = autocast
-        self.scaler = GradScaler()
-
-    def calc_cafep(self, inputs, adv_inputs, targets):
-        self.proxy.load_state_dict(self.model.state_dict())
-        self.proxy.train()
-        self.c_net.eval()
-
-        self.proxy_optim.zero_grad()
-        with self.autocast():
-            clean_feature = self.proxy(inputs, pop=True)
-            adv_feature = self.proxy(adv_inputs, pop=True)
-            casual_feature = self.proxy(clean_feature + self.c_net(adv_feature-clean_feature), int=True)
-            loss = - F.cross_entropy(casual_feature, targets)
 
         # Accerlating backward propagation
         self.scaler.scale(loss).backward()

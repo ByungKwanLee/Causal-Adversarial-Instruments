@@ -17,9 +17,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='awp', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=512, type=float)
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 parser.add_argument('--port', default="12357", type=str)
@@ -75,7 +75,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     # test
-    test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'], rank=rank)
+    # test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'], rank=rank)
+    test_whitebox(net, testloader, attack_list=['plain', 'pgd'], rank=rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

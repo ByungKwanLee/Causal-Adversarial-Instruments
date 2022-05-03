@@ -3,6 +3,8 @@ from attack.libfastattack.FastFGSMTrain import FastFGSMTrain
 from attack.libfastattack.FastMIM import FastMIM
 from attack.libfastattack.FastBIM import FastBIM
 from attack.libfastattack.FastPGD import FastPGD
+from attack.libfastattack.FastCausalPGD import FastCausalPGD
+from attack.libfastattack.FastCausalFGSM import FastCausalFGSM
 from attack.libfastattack.FastCWLinf import FastCWLinf
 from attack.libfastattack.FastAPGD import FastAPGD
 from attack.libfastattack.FastAutoAttack import FastAutoAttack
@@ -22,6 +24,14 @@ def attack_loader(net, attack, eps, steps):
 
     elif attack == "pgd":
         return FastPGD(model=net, eps=eps,
+                                alpha=eps/steps*2.3, steps=steps, random_start=True)
+
+    elif attack == "causalpgd":
+        return FastCausalPGD(model=net, eps=eps,
+                                alpha=eps/steps*2.3, steps=steps, random_start=True)
+
+    elif attack == "causalfgsm":
+        return FastCausalFGSM(model=net, eps=eps,
                                 alpha=eps/steps*2.3, steps=steps, random_start=True)
 
     elif attack == "mim":

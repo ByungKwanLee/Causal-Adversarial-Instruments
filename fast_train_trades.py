@@ -184,7 +184,6 @@ def test(net, testloader, attack, rank):
                                                                             args.network,
                                                                             args.depth))
 
-
 def trades_loss(logits,
                 logits_adv,
                 targets):
@@ -219,7 +218,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
-    # Load Plain Network
+    # Load ADV Network
     checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
@@ -229,7 +228,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=0.03, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
