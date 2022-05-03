@@ -19,9 +19,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--base', default='trades', type=str)
 parser.add_argument('--batch_size', default=512, type=float)
-parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='4', type=str) # necessarily one gpu id!!!!
 parser.add_argument('--port', default="12357", type=str)
 
 args = parser.parse_args()

@@ -244,21 +244,27 @@ def feature_vis(img, inv, label, dataset=None):
     return bg_img
 
 
-class CrossEntropyLabelSmoothing(nn.Module):
-    def __init__(self, label_smoothing=0.0, dim=-1):
-        super(CrossEntropyLabelSmoothing, self).__init__()
-        self.confidence = 1.0 - label_smoothing
-        self.smoothing = label_smoothing
-        self.dim = dim
+class SmoothCrossEntropyLoss(torch.nn.Module):
+    """
+    Soft cross entropy loss with label smoothing.
+    """
+    def __init__(self, smoothing=0.0, reduction='mean'):
+        super(SmoothCrossEntropyLoss, self).__init__()
+        self.smoothing = smoothing
+        self.reduction = reduction
 
-    def forward(self, pred, target):
-        cls = pred.shape[0]
-        pred = pred.log_softmax(dim=self.dim)
-        with torch.no_grad():
-            true_dist = torch.zeros_like(pred)
-            true_dist.fill_(self.smoothing / (cls - 1))
-            true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
-        return torch.mean(torch.sum(-true_dist * pred, dim=self.dim))
+    def forward(self, input, target):
+        num_classes = input.shape[1]
+        if target.ndim == 1:
+            target = torch.nn.functional.one_hot(target, num_classes)
+        target = (1. - self.smoothing) * target + self.smoothing / num_classes
+        logprobs = torch.nn.functional.log_softmax(input, dim=1)
+        loss = - (target * logprobs).sum(dim=1)
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
 
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
@@ -337,7 +343,7 @@ def test_whitebox(net, testloader, attack_list, rank):
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=10) \
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
                                                                                 if attack_name != 'plain' else None
     for key in attack_module:
         total = 0
