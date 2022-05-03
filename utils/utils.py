@@ -282,21 +282,6 @@ def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
 
     return final_res
 
-def get_randomresizedcrop(epoch, min_res, max_res, end_ramp, start_ramp):
-    assert min_res <= max_res
-
-    if epoch <= start_ramp:
-        return torchvision.transforms.Resize((min_res, min_res))
-
-    if epoch >= end_ramp:
-        return torchvision.transforms.Resize((max_res, max_res))
-
-    # otherwise, linearly interpolate to the nearest multiple of 32
-    interp = np.interp([epoch], [start_ramp, end_ramp], [min_res, max_res])
-    final_res = int(np.round(interp[0] / 32)) * 32
-
-    return torchvision.transforms.RandomResizedCrop((final_res, final_res))
-
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
