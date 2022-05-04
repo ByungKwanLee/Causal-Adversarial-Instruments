@@ -10,17 +10,7 @@ class FastCausalFGSM(Attack):
         self.eps = eps
         self._supported_mode = ['default', 'targeted']
         self.scaler = GradScaler()
-        self.alpha = self.return_alpha()
-
-    def return_alpha(self):
-        self.child = []
-        for name, child in self.model.module.named_children():
-            self.child.append(child)
-
-        if self.child[-1].out_features > 200:
-            return 2.5
-        else:
-            return 1.25
+        self.alpha = 2.5
 
     def forward(self, images, labels, causal_outputs):
 

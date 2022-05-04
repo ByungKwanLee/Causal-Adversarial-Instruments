@@ -323,12 +323,12 @@ def KLDivergence(q, p):
 from attack.fastattack import attack_loader
 from tqdm import tqdm
 from torch.cuda.amp import autocast
-def test_whitebox(net, testloader, attack_list, rank):
+def test_whitebox(net, testloader, attack_list, eps, rank):
     net.eval()
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30) \
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps, steps=30) \
                                                                                 if attack_name != 'plain' else None
     for key in attack_module:
         total = 0
@@ -351,13 +351,13 @@ def test_whitebox(net, testloader, attack_list, rank):
 
         rprint(f'{key}: {100. * correct / total:.2f}%', rank)
 
-def test_blackbox(plain_net, adv_net, testloader, attack_list, rank):
+def test_blackbox(plain_net, adv_net, testloader, attack_list, eps, rank):
     plain_net.eval()
     adv_net.eval()
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=0.03, steps=30)
+        attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=eps, steps=30)
 
     for key in attack_module:
         total = 0
@@ -381,7 +381,7 @@ def test_blackbox(plain_net, adv_net, testloader, attack_list, rank):
         rprint(f'{key}: {100. * correct / total:.2f}%', rank)
 
 
-def test_inversion(net, c_net, testloader, attack_list, inv_causal, rank):
+def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
     KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
 
     net.eval()
@@ -389,7 +389,7 @@ def test_inversion(net, c_net, testloader, attack_list, inv_causal, rank):
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=0.03, steps=30)
+        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps, steps=30)
 
     for key in attack_module:
         total = 0

@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -84,7 +84,7 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
             adv_outputs = net(adv_inputs)
             hat_outputs = net(inputs + 2*(adv_inputs-inputs))
             hat_target = std(adv_inputs).max(1)[1]
-            loss = mart_loss(outputs, adv_outputs, targets)+0.5*F.cross_entropy(hat_outputs, hat_target)
+            loss = trades_loss(outputs, adv_outputs, targets)+0.5*F.cross_entropy(hat_outputs, hat_target)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -186,6 +186,16 @@ def test(net, testloader, attack, rank):
             print('Saving~ ./checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
+
+
+def trades_loss(logits,
+                logits_adv,
+                targets):
+    criterion_kl = nn.KLDivLoss(size_average=False)
+    loss_natural = F.cross_entropy(logits, targets)
+    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
+    loss = loss_natural + float(5) * loss_robust
+    return loss
 
 def mart_loss(logits,
             logits_adv,

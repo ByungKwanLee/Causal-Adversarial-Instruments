@@ -64,7 +64,8 @@ def main_worker():
     checkpoint_module(checkpoint['net'], plain_net)
 
     # test
-    test_blackbox(plain_net, adv_net, testloader, attack_list=['fgsm', 'bim', 'pgd', 'mim', 'cw_linf', 'fab', 'ap', 'dlr', 'auto'], rank=0)
+    test_blackbox(plain_net, adv_net, testloader, attack_list=['fgsm', 'bim', 'pgd', 'mim', 'cw_linf', 'fab', 'ap', 'dlr', 'auto'],
+                  eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
 
 if __name__ == '__main__':
     main_worker()
