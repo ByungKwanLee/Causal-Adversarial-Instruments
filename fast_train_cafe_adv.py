@@ -30,14 +30,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.001, type=float)
+parser.add_argument('--learning_rate', default=0.1, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
@@ -61,10 +61,10 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-
-def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack):
+    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
     net.train()
-    std.eval()
+    c_net.eval()
     train_loss = 0
     correct = 0
     total = 0
@@ -77,16 +77,30 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
-        # Accerlating forward propagation
+        # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            adv_outputs = net(adv_inputs)
-            hat_outputs = net(inputs + 2*(adv_inputs-inputs))
-            hat_target = std(adv_inputs).max(1)[1]
-            loss = mart_loss(outputs, adv_outputs, targets)+0.5*F.cross_entropy(hat_outputs, hat_target)
 
-        # Accerlating backward propagation
+            # clean feature
+            clean_feature = net(inputs, pop=True)
+
+            # adv feature
+            adv_feature = net(adv_inputs, pop=True)
+
+            # causal feature and output
+            causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+            causal_outputs = net(causal_feature.clone(), int=True)
+
+            # inv causal feature
+            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+
+            # again inv causal feature for ADV
+            inv_outputs = net(inv_inputs)
+            adv_outputs = net(adv_inputs)
+
+            loss = F.cross_entropy(adv_outputs, targets) + KL(adv_outputs, inv_outputs)
+
+        # Accelerating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -95,7 +109,7 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
         lr_scheduler.step()
 
         train_loss += loss.item()
-        _, predicted = outputs.max(1)
+        _, predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -180,27 +194,13 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_cafeadv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_cafeadv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
 
-def mart_loss(logits,
-            logits_adv,
-            targets):
-    kl = torch.nn.KLDivLoss(reduction='none')
-    adv_probs = F.softmax(logits_adv, dim=1)
-    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
-    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
-    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
-    nat_probs = F.softmax(logits, dim=1)
-    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
-    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
-        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
-    return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
@@ -214,7 +214,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print("Use GPU: {} for training".format(gpu_list[rank]))
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    # init robust model and Distributed Data Parallel
+    # init model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
                       dataset=args.dataset)
@@ -222,13 +222,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
-    # init std model and Distributed Data Parallel
-    std = get_network(network=args.network,
-                      depth=args.depth,
-                      dataset=args.dataset)
-    std = torch.nn.SyncBatchNorm.convert_sync_batchnorm(std)
-    std = std.to(memory_format=torch.channels_last).cuda()
-    std = torch.nn.parallel.DistributedDataParallel(std, device_ids=[rank], output_device=[rank])
+    # init causal net and Distributed Data Parallel
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset, ch=True if args.network=='wide' else False)
+    c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
+    c_net = c_net.to(memory_format=torch.channels_last).cuda()
+    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
+    do_freeze(c_net)
 
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
@@ -242,32 +241,37 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
-    # Load Plain Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    # Load Causal Network
+    checkpoint_name = 'checkpoint/causal/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-    std.load_state_dict(checkpoint['net'])
+    c_net.load_state_dict(checkpoint['c_net'])
     rprint(f'==> {checkpoint_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded Causal checkpoint..', rank)
 
     # Attack loader
-    if args.dataset == 'tiny':
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=args.eps, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
+    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
+    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
-    for epoch in range(args.epoch):
+    for epoch in range(args.epoch if args.dataset != 'tiny' else 10):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack)
+        if args.dataset == "imagenet":
+            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+            decoder.output_size = (res, res)
+        train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack)
         test(net, testloader, attack, rank)
-
 
 
 def run():
