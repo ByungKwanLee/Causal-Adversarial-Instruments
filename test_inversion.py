@@ -15,12 +15,12 @@ from utils.utils import *
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--base', default='adv', type=str)
-parser.add_argument('--batch_size', default=512, type=float)
-parser.add_argument('--gpu', default='4', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 def main_worker():
@@ -52,14 +52,14 @@ def main_worker():
     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
     args.dataset, args.dataset, args.base, args.network, args.depth)
 
-    checkpoint = torch.load(checkpoint_name)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     checkpoint_module(checkpoint['net'], net)
     rprint("This test : {}".format(checkpoint_name), 0)
 
 
     # Load Causal Network
     checkpoint_name = 'checkpoint/causal/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-    checkpoint = torch.load(checkpoint_name)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     checkpoint_module(checkpoint['c_net'], c_net)
     rprint("This test : {}".format(checkpoint_name), 0)
 

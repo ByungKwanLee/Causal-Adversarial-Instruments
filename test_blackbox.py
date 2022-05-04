@@ -56,11 +56,11 @@ def main_worker():
     adv_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
 
     rprint("This test : {}".format(adv_checkpoint_name), 0)
-    checkpoint = torch.load(adv_checkpoint_name)
+    checkpoint = torch.load(adv_checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     checkpoint_module(checkpoint['net'], adv_net)
 
     rprint("This test : {}".format(plain_checkpoint_name), 0)
-    checkpoint = torch.load(plain_checkpoint_name)
+    checkpoint = torch.load(plain_checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     checkpoint_module(checkpoint['net'], plain_net)
 
     # test
