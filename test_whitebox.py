@@ -6,7 +6,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
-import torch.distributed as dist
 
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
@@ -22,39 +21,22 @@ parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--base', default='mart', type=str)
 parser.add_argument('--batch_size', default=512, type=float)
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
-parser.add_argument('--port', default="12357", type=str)
-
 args = parser.parse_args()
 
-# GPU configurations
-os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
-os.environ['MASTER_ADDR'] = 'localhost'
-os.environ['MASTER_PORT'] = args.port
 
-# the number of gpus for multi-process
-gpu_list = list(map(int, args.gpu.split(',')))
-ngpus_per_node = len(gpu_list)
-
-def main_worker(rank, ngpus_per_node=ngpus_per_node):
+def main_worker():
 
     # print configuration
-    print_configuration(args, rank)
+    print_configuration(args, 0)
 
     # setting gpu id of this process
-    torch.cuda.set_device(rank)
-
-    # DDP environment settings
-    print("Use GPU: {} for training".format(gpu_list[rank]))
-    dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
+    torch.cuda.set_device(f'cuda:{args.gpu}')
 
 
-    # init model and Distributed Data Parallel
+    # init model
     net = get_network(network=args.network,
                       depth=args.depth,
-                      dataset=args.dataset)
-    net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
-    net = net.to(memory_format=torch.channels_last).cuda()
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
+                      dataset=args.dataset).cuda()
     net.eval()
 
 
@@ -70,19 +52,16 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
         args.dataset, args.dataset, args.base, args.network, args.depth)
 
-    rprint("This test : {}".format(checkpoint_name), rank)
+    rprint("This test : {}".format(checkpoint_name), 0)
     checkpoint = torch.load(checkpoint_name)
-    net.load_state_dict(checkpoint['net'])
+    checkpoint_module(checkpoint['net'], net)
 
     # test
-    # test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'], rank=rank)
-    test_whitebox(net, testloader, attack_list=['plain', 'pgd'], rank=rank)
-
-def run():
-    torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
+    # test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'], rank=0)
+    test_whitebox(net, testloader, attack_list=['plain', 'pgd'], rank=0)
 
 if __name__ == '__main__':
-    run()
+    main_worker()
 
 
 
