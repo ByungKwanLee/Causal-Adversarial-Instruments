@@ -402,7 +402,6 @@ def add_into_weights(model, diff, coeff=1.0):
             if name in names_in_diff:
                 param.add_(coeff * diff[name])
 
-
 class AdvWeightPerturb(object):
     def __init__(self, model, proxy, lr, gamma, autocast, GradScaler):
         super(AdvWeightPerturb, self).__init__()
@@ -419,9 +418,9 @@ class AdvWeightPerturb(object):
 
         self.proxy_optim.zero_grad()
         with self.autocast():
-            loss = - F.cross_entropy(self.proxy(adv_inputs), targets)
+            loss = -F.cross_entropy(self.proxy(adv_inputs), targets)
 
-        # Accerlating backward propagation
+        # Accelerating backward propagation
         self.scaler.scale(loss).backward()
         self.scaler.step(self.proxy_optim)
         self.scaler.update()

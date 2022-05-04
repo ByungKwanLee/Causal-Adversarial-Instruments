@@ -30,15 +30,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12201", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=6, type=int)
+parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -141,8 +141,8 @@ def test(net, testloader, attack, rank):
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs = attack(inputs, targets)
         inputs, targets = inputs.cuda(), targets.cuda()
+        inputs = attack(inputs, targets)
 
         # Accerlating forward propagation
         with autocast():
@@ -249,6 +249,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)
+
 
 
 def run():
