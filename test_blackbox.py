@@ -52,8 +52,19 @@ def main_worker():
                                         test_batch_size=args.batch_size)
 
     # Loading checkpoint
-    plain_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-    adv_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
+    if 'cafe' in args.base:
+        # Loading checkpoint
+        plain_checkpoint_name = 'checkpoint/causal/%s/%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.network, args.depth)
+        adv_checkpoint_name = 'checkpoint/causal/%s/%s_%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.base, args.network, args.depth)
+    else:
+        # Loading checkpoint
+        plain_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.network, args.depth)
+        adv_checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.base, args.network, args.depth)
+
 
     rprint("This test : {}".format(adv_checkpoint_name), 0)
     checkpoint = torch.load(adv_checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
