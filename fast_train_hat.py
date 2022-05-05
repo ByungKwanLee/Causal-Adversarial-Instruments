@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -195,21 +195,6 @@ def trades_loss(logits,
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
     loss = loss_natural + float(6) * loss_robust
-    return loss
-
-def mart_loss(logits,
-            logits_adv,
-            targets):
-    kl = torch.nn.KLDivLoss(reduction='none')
-    adv_probs = F.softmax(logits_adv, dim=1)
-    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
-    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
-    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
-    nat_probs = F.softmax(logits, dim=1)
-    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
-    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
-        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
