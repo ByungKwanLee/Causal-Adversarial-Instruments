@@ -6,7 +6,7 @@ import torchvision
 from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
-    RandomResizedCropRGBImageDecoder, ResizedCropRGBImageDecoder
+    RandomResizedCropRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
 from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
@@ -83,51 +83,6 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     if dataset == 'tiny':
         mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
         img_size = 64
-
-        # for small dataset
-        paths = {
-            'train': f'../ffcv_data/{dataset}/{dataset}_train.beton',
-            'test': f'../ffcv_data/{dataset}/{dataset}_test.beton'
-        }
-
-        # imagenet code transfer
-        # fix size
-        decoder = RandomResizedCropRGBImageDecoder((img_size, img_size))
-
-        loaders = {}
-        for name in ['train', 'test']:
-            # imagenet code transfer
-            if name == 'train':
-                image_pipeline: List[Operation] = [decoder,
-                                                   RandomHorizontalFlip()]
-            else:
-                image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
-
-            # original code
-            # image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
-            label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(torch.device(gpu)),
-                                               Squeeze()]
-
-            # original code
-            # if name == 'train':
-            #     image_pipeline.extend([
-            #         RandomHorizontalFlip(),
-            #         RandomTranslate(padding=int(img_size / 8.), fill=tuple(map(int, mean))),
-            #     ])
-            image_pipeline.extend([
-                ToTensor(),
-                ToDevice_modified(torch.device(gpu), non_blocking=True),
-                ToTorchImage(),
-                Normalize_and_Convert(torch.float16, True)
-            ])
-
-            order = OrderOption.RANDOM if name == 'train' else OrderOption.SEQUENTIAL
-
-            loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
-                                   num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
-                                   pipelines={'image': image_pipeline, 'label': label_pipeline})
-
-        return loaders['train'], loaders['test'], decoder
 
     if dataset == 'imagenet':
         # fix size

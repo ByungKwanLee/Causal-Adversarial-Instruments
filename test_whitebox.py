@@ -16,9 +16,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='hat', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='cafeadv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
