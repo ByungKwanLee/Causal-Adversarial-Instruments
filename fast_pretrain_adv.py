@@ -224,13 +224,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
+    args.epoch = args.epoch if args.dataset !='tiny' else 4
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
-    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
+    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else 2 * len(trainloader),
+    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
-    for epoch in range(args.epoch if args.dataset != 'tiny' else 6):
+    for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
             res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
