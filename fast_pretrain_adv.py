@@ -216,9 +216,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
-    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+    if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255, steps=args.steps)
+    elif args.dataset == 'tiny':
+        rprint('PGD training', rank)
+        attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
