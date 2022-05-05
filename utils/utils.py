@@ -153,6 +153,30 @@ def network_vis(fig, layer_info, f_type):
 
     return bg_img
 
+def inst_vis(img, inv, save_dir, batch_idx):
+    img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
+    ori_img = Image.fromarray((img * 255).astype(np.uint8))
+    ori_cln = Image.fromarray((inv[0] * 255).astype(np.uint8))
+    ori_adv = Image.fromarray((inv[1] * 255).astype(np.uint8))
+    ori_causal = Image.fromarray((inv[2] * 255).astype(np.uint8))
+    ori_treat = Image.fromarray((inv[3] * 255).astype(np.uint8))
+    ori_inst = Image.fromarray((inv[4] * 255).astype(np.uint8))
+
+    ori_img = ori_img.resize((224, 224), Image.NEAREST)
+    ori_cln = ori_cln.resize((224, 224), Image.NEAREST)
+    ori_adv = ori_adv.resize((224, 224), Image.NEAREST)
+    ori_causal = ori_causal.resize((224, 224), Image.NEAREST)
+    ori_treat = ori_treat.resize((224, 224), Image.NEAREST)
+    ori_inst = ori_inst.resize((224, 224), Image.NEAREST)
+
+    ori_img.save(save_dir + '/ori_img%d.png' % (batch_idx))
+    ori_cln.save(save_dir + '/cln_img%d.png' % (batch_idx))
+    ori_adv.save(save_dir + '/adv_img%d.png' % (batch_idx))
+    ori_causal.save(save_dir + '/causal_img%d.png' % (batch_idx))
+    ori_treat.save(save_dir + '/treat_img%d.png' % (batch_idx))
+    ori_inst.save(save_dir + '/inst_img%d.png' % (batch_idx))
+
+
 def causal_vis(img, inv, label, dataset=None):
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])
     ori_img = Image.fromarray((img * 255).astype(np.uint8))
@@ -207,6 +231,7 @@ def causal_vis(img, inv, label, dataset=None):
     draw.text((224 * 5 + 20 * 6, 0), 'Inst Inv: ' + str(o_label[label[5]]), fill='red', font=selectedFont)
 
     return bg_img
+
 
 def feature_vis(img, inv, label, dataset=None):
     img = np.transpose(img.squeeze().cpu().detach().numpy(), [1, 2, 0])

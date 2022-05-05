@@ -22,14 +22,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=32, type=float)
+parser.add_argument('--batch_size', default=1, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -321,10 +321,73 @@ def net_visualize():
 
     print("\n [*] Inversion Img is saved")
 
+def inst_visualization():
+    net.eval()
+    c_net.eval()
+    z_net.eval()
+
+    if args.base == 'plain':
+        save_dir = './results/fig/clean_vis_' + str(args.dataset) + '_' + str(args.network)
+    elif args.base == 'adv':
+        save_dir = './results/fig/%s_vis_' % (str(args.attack)) + str(args.dataset) + '_' + str(args.network) + '_' + str(args.eps)
+    else:
+        save_dir = './results/fig/vis_%s' %(str(causal_checkpoint_name.split('/')[-1].split('.')[0]))
+
+    check_dir(save_dir)
+
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+        attack = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+    else:
+        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
+
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+    for batch_idx, (inputs, targets) in prog_bar:
+        inputs, targets = inputs.cuda(), targets.cuda()
+        adv_inputs = attack(inputs, targets)
+
+
+        #[9, 25, 65, 95, 130, 155, 169, 178, 195, 221, 223, 307, 308, 329, 336, 395, 536] # cifar
+        #[2, 10, 39, 162, 203, 232, 313, 327, 434, 436, 439, 516] # svhn
+        #[23, 30, 33, 41, 46, 48, 61, 71, 105, 114, 118, 129, 141, 269, 287, 414, 426] # imagenet
+
+        if batch_idx in [2, 10, 39, 162, 203, 232, 313, 327, 434, 436, 439, 516]:
+            adv_feature = net(adv_inputs, pop=True)
+            _, adv_pred = net(adv_feature.clone(), int=True).max(1)
+
+            if targets.item() != adv_pred.item():
+                cln_feature = net(inputs, pop=True)
+                residual = adv_feature - cln_feature
+                worst_feature = z_net(residual)
+
+                inst_feature = cln_feature + worst_feature
+                treat_feature = cln_feature + c_net(residual)
+                causal_feature = cln_feature + c_net(worst_feature)
+
+                _, cln_pred = net(cln_feature.clone(), int=True).max(1)
+                _, causal_pred = net(causal_feature.clone(), int=True).max(1)
+                _, treat_pred = net(treat_feature.clone(), int=True).max(1)
+                _, inst_pred = net(inst_feature.clone(), int=True).max(1)
+
+                cln_inv = SpInversion(cln_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+                adv_inv = SpInversion(adv_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+                causal_inv = SpInversion(causal_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+                treat_inv = SpInversion(treat_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+                inst_inv = SpInversion(inst_feature.clone(), net, dataset=args.dataset).invert(inputs).squeeze()
+
+                label = [targets.item(), cln_pred.item(), adv_pred.item(), causal_pred.item(), treat_pred.item(), inst_pred.item()]
+                inv = [cln_inv, adv_inv, causal_inv, treat_inv, inst_inv]
+
+                save_img = causal_vis(inputs, inv, label, dataset=args.dataset)
+                save_img.save(save_dir + '/inv_img%d.png' % (batch_idx))
+                print("\n [*] Inversion Img%d is saved" % (batch_idx))
+
+                inst_vis(inputs, inv, save_dir, batch_idx)
+
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
     #visualizaition()
-    class_prediction()
+    #class_prediction()
     #test()
+    inst_visualization()
 
