@@ -98,7 +98,7 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
             inv_outputs = net(inv_inputs)
             adv_outputs = net(adv_inputs)
 
-            loss = F.cross_entropy(adv_outputs, inv_outputs.max(1)[1])
+            loss = KL(adv_outputs, inv_outputs.detach())
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
