@@ -36,7 +36,7 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12355', type=str)
+parser.add_argument('--port', default='12353', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -281,9 +281,13 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     # Attack loader
-    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+    if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+
+    elif args.dataset == 'tiny':
+        rprint('PGD training', rank)
+        attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
 
     else:
         rprint('PGD training', rank)
