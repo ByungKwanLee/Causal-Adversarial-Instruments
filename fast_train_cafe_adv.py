@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -98,7 +98,7 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
             inv_outputs = net(inv_inputs)
             adv_outputs = net(adv_inputs)
 
-            loss = F.cross_entropy(adv_outputs, targets) + KL(adv_outputs, inv_outputs)
+            loss = F.cross_entropy(adv_outputs, inv_outputs.max(1)[1])
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
@@ -230,7 +230,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     do_freeze(c_net)
 
     # fast init dataloader
-    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, _ = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
@@ -249,10 +249,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint('==> Successfully Loaded Causal checkpoint..', rank)
 
     # Attack loader
-    if args.dataset == 'imagenet' or args.dataset == 'tiny':
-        rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=args.eps, steps=args.steps)
+    if args.dataset == 'tiny':
+        rprint('PGD training', rank)
+        attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -261,15 +261,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5 * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
-    step_size_down=(args.epoch - 5) * len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
+    step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
 
     # training and testing
-    for epoch in range(args.epoch if args.dataset != 'tiny' else 10):
+    for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        if args.dataset == "imagenet":
-            res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
-            decoder.output_size = (res, res)
         train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack)
         test(net, testloader, attack, rank)
 

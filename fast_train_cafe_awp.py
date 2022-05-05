@@ -211,7 +211,7 @@ def trades_loss(logits,
     criterion_kl = nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(5) * loss_robust
+    loss = loss_natural + float(4) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -276,9 +276,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=args.eps, steps=args.steps)
+        rprint('PGD training', rank)
+        attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

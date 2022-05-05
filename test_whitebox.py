@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--base', default='awp', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='cafeadv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='4', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 
@@ -46,11 +46,15 @@ def main_worker():
                                         test_batch_size=args.batch_size)
 
     # Loading checkpoint
-    if args.base == 'plain':
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-    else:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
+    if 'cafe' in args.base:
+        checkpoint_name = 'checkpoint/causal/%s/%s_%s_%s%s_best.t7' % (
         args.dataset, args.dataset, args.base, args.network, args.depth)
+    else:
+        if args.base == 'plain':
+            checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+        else:
+            checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s%s_best.t7' % (
+            args.dataset, args.dataset, args.base, args.network, args.depth)
 
     rprint("This test : {}".format(checkpoint_name), 0)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
