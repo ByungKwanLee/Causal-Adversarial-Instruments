@@ -34,7 +34,7 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
-parser.add_argument('--learning_rate', default=0.1, type=float)
+parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -249,10 +249,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint('==> Successfully Loaded Causal checkpoint..', rank)
 
     # Attack loader
-    if args.dataset == 'imagenet' or args.dataset == 'tiny':
+    if args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=args.eps, steps=args.steps)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
