@@ -276,9 +276,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=4/255, steps=args.steps)
+        rprint('PGD training', rank)
+        attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
