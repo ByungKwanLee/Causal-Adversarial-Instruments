@@ -245,6 +245,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         test(net, testloader, attack, rank)
 
 
+
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
 

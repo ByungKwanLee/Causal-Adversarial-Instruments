@@ -6,7 +6,7 @@ import torchvision
 from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
-    RandomResizedCropRGBImageDecoder
+    RandomResizedCropRGBImageDecoder, ResizedCropRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
 from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
@@ -90,16 +90,30 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
             'test': f'../ffcv_data/{dataset}/{dataset}_test.beton'
         }
 
+        # imagenet code transfer
+        # fix size
+        decoder = RandomResizedCropRGBImageDecoder((img_size, img_size))
+
         loaders = {}
         for name in ['train', 'test']:
-            image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+            # imagenet code transfer
+            if name == 'train':
+                image_pipeline: List[Operation] = [decoder,
+                                                   RandomHorizontalFlip()]
+            else:
+                image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+
+            # original code
+            # image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
             label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice_modified(torch.device(gpu)),
                                                Squeeze()]
-            if name == 'train':
-                image_pipeline.extend([
-                    RandomHorizontalFlip(),
-                    RandomTranslate(padding=int(img_size / 8.), fill=tuple(map(int, mean))),
-                ])
+
+            # original code
+            # if name == 'train':
+            #     image_pipeline.extend([
+            #         RandomHorizontalFlip(),
+            #         RandomTranslate(padding=int(img_size / 8.), fill=tuple(map(int, mean))),
+            #     ])
             image_pipeline.extend([
                 ToTensor(),
                 ToDevice_modified(torch.device(gpu), non_blocking=True),

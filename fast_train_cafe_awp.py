@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=6, type=int)
+parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -60,7 +60,6 @@ best_acc = 0
 
 # Mix Training
 scaler = GradScaler()
-
 
 def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, inv_causal, awp):
     net.train()
@@ -199,10 +198,10 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/causal/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/causal/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
 
@@ -212,7 +211,7 @@ def trades_loss(logits,
     criterion_kl = nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(2) * loss_robust
+    loss = loss_natural + float(5) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -295,6 +294,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, inv_causal, awp)
         test(net, testloader, attack, rank)
+
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

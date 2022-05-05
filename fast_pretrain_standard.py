@@ -31,9 +31,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
@@ -177,8 +177,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=5*len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else 2 * len(trainloader),
-    step_size_down=(args.epoch-5)*len(trainloader) if args.dataset != 'imagenet' or args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
+    step_size_up=5*len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else 2 * len(trainloader),
+    step_size_down=(args.epoch-5)*len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else (args.epoch - 2) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epoch):

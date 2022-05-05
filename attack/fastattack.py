@@ -31,8 +31,7 @@ def attack_loader(net, attack, eps, steps):
                                 alpha=eps/steps*2.3, steps=steps, random_start=True)
 
     elif attack == "causalfgsm":
-        return FastCausalFGSM(model=net, eps=eps,
-                                alpha=eps/steps*2.3, steps=steps, random_start=True)
+        return FastCausalFGSM(model=net, eps=eps)
 
     elif attack == "mim":
         return FastMIM(model=net, eps=eps, alpha=1/255, steps=steps)
