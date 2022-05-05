@@ -342,15 +342,13 @@ def inst_visualization():
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.cuda(), targets.cuda()
-        adv_inputs = attack(inputs, targets)
-
-
         #[9, 25, 65, 95, 130, 155, 169, 178, 195, 221, 223, 307, 308, 329, 336, 395, 536] # cifar
         #[2, 10, 39, 162, 203, 232, 313, 327, 434, 436, 439, 516] # svhn
         #[23, 30, 33, 41, 46, 48, 61, 71, 105, 114, 118, 129, 141, 269, 287, 414, 426] # imagenet
+        inputs, targets = inputs.cuda(), targets.cuda()
 
-        if batch_idx in [2, 10, 39, 162, 203, 232, 313, 327, 434, 436, 439, 516]:
+        if batch_idx in [7306, 7383, 7487, 7543, 7874, 8046]:
+            adv_inputs = attack(inputs, targets)
             adv_feature = net(adv_inputs, pop=True)
             _, adv_pred = net(adv_feature.clone(), int=True).max(1)
 

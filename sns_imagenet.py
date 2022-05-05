@@ -21,7 +21,7 @@ imgn = np.concatenate([imgn_adv, imgn_inst, imgn_causal, imgn_treat])
 
 imgn_df = pd.DataFrame(columns=content, data=imgn)
 
-imgn_ = imgn_df.set_index([["AF", "CF", "CC", "AC"]])
+imgn_ = imgn_df.set_index([["Adv", "CF", "CC", "AC"]])
 imgn_df_ = imgn_.stack().reset_index()
 imgn_df_.columns = ['', 'Method', 'Accuracy']
 

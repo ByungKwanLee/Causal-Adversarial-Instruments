@@ -21,7 +21,7 @@ svhn = np.concatenate([svhn_adv, svhn_inst, svhn_causal, svhn_treat])
 
 svhn_df = pd.DataFrame(columns=content, data=svhn)
 
-svhn_ = svhn_df.set_index([["AF", "CF", "CC", "AC"]])
+svhn_ = svhn_df.set_index([["Adv", "CF", "CC", "AC"]])
 svhn_df_ = svhn_.stack().reset_index()
 svhn_df_.columns = ['', 'Method', 'Accuracy']
 

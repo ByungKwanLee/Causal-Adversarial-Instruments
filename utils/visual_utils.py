@@ -100,15 +100,6 @@ class NetInversion(object):
         if self.network == 'vgg':
             s_layer = 'vgg_features_%d'%(selected_layer)
 
-        elif self.network == 'resnet':
-            s_layer = 'layer%d' % (selected_layer)
-
-        elif self.network == 'dense':
-            s_layer = 'vgg_features_%d' % (selected_layer)
-
-        elif self.network == 'wide':
-            s_layer = 'vgg_features_%d' % (selected_layer)
-
         else:
             raise Exception(" [*] Wrong network description.")
 

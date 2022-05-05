@@ -36,7 +36,7 @@ parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default='12351', type=str)
+parser.add_argument('--port', default='12355', type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.0001, type=float)
@@ -290,7 +290,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
-    if args.dataset == 'imagenet':
+    if args.dataset == 'imagenet' or args.dataset == 'tiny':
         c_optimizer = optim.AdamW([{'params': c_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
         inst_optimizer = optim.AdamW([{'params': z_net.parameters()}], lr=args.learning_rate, betas=(0.5, 0.999), weight_decay=1e-4)
     else:
