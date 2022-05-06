@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=4, type=int)
+parser.add_argument('--epoch', default=2, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -62,7 +62,7 @@ best_acc = 0
 scaler = GradScaler()
 
 
-def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack):
+def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack, awp):
     net.train()
     std.eval()
     c_net.eval()
@@ -78,6 +78,10 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
+        # causal awp
+        awp_obj = awp.calc_awp(adv_inputs=adv_inputs, targets=targets)
+        awp.perturb(awp_obj)
+
         # Accerlating forward propagation
         optimizer.zero_grad()
         with autocast():
@@ -89,23 +93,32 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
             adv_feature = net(adv_inputs, pop=True)
 
             # causal feature and output
-            causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+            del_causal = c_net(adv_feature - clean_feature)
+            causal_feature = clean_feature + del_causal
             causal_outputs = net(causal_feature.clone(), int=True)
 
-            # inv causal feature
-            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+        # inv causal feature
+        inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
 
-            # again inv causal feature for HAT
-            inv_outputs = net(inv_inputs)
-            adv_outputs = net(adv_inputs)
+        with autocast():
+            # again inv causal feature for HELP
+            inv_feature = net(inv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
+            clean_outputs = net(clean_feature.clone(), int=True)
             hat_outputs = net(inputs + 2*(adv_inputs-inputs))
             hat_target = std(adv_inputs).max(1)[1]
-            loss = trades_loss(inv_outputs, adv_outputs, targets)+0.5*F.cross_entropy(hat_outputs, hat_target)
+            causal_loss = (inv_feature - clean_feature - del_causal).square().mean()
+
+            loss = mart_loss(clean_outputs, adv_outputs, targets)\
+                   +0.5*F.cross_entropy(hat_outputs, hat_target) + causal_loss
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        # awp restore
+        awp.restore(awp_obj)
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
@@ -118,7 +131,6 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
         desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
-
 
 
 def test(net, testloader, attack, rank):
@@ -203,14 +215,19 @@ def test(net, testloader, attack, rank):
                                                                             args.network,
                                                                             args.depth))
 
-
-def trades_loss(logits,
-                logits_adv,
-                targets):
-    criterion_kl = nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(6) * loss_robust
+def mart_loss(logits,
+            logits_adv,
+            targets):
+    kl = torch.nn.KLDivLoss(reduction='none')
+    adv_probs = F.softmax(logits_adv, dim=1)
+    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
+    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
+    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
+    nat_probs = F.softmax(logits, dim=1)
+    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
+    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
+        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
+    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -233,6 +250,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    proxy = get_network(network=args.network,
+                        depth=args.depth,
+                        dataset=args.dataset)
+    proxy = torch.nn.SyncBatchNorm.convert_sync_batchnorm(proxy)
+    proxy = proxy.to(memory_format=torch.channels_last).cuda()
+    proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
+
+
     # init std model and Distributed Data Parallel
     std = get_network(network=args.network,
                       depth=args.depth,
@@ -248,15 +273,20 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
     do_freeze(c_net)
 
+    # awp adversary
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+
+
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
-    # Load HAT Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    # Load ADV Network
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
+    proxy.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
@@ -292,7 +322,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack)
+        train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack, awp)
         test(net, testloader, attack, rank)
 
 

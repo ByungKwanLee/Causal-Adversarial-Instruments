@@ -27,10 +27,10 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12201", type=str)
 
 # learning parameter
@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=4, type=int)
+parser.add_argument('--epoch', default=2, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -88,16 +88,19 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
             adv_feature = net(adv_inputs, pop=True)
 
             # causal feature and output
-            causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+            del_causal = c_net(adv_feature - clean_feature)
+            causal_feature = clean_feature + del_causal
             causal_outputs = net(causal_feature.clone(), int=True)
 
-            # inv causal feature
-            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
-
+        # inv causal feature
+        inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+        with autocast():
             # again inv causal feature for MART
-            inv_outputs = net(inv_inputs)
-            adv_outputs = net(adv_inputs)
-            loss = mart_loss(inv_outputs, adv_outputs, targets)
+            inv_feature = net(inv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
+            clean_outputs = net(clean_feature.clone(), int=True)
+            causal_loss = (inv_feature-clean_feature-del_causal).square().mean()
+            loss = mart_loss(clean_outputs, adv_outputs, targets) + causal_loss
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -212,7 +215,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
+    loss = loss_adv + float(3) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -247,8 +250,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
-    # Load MART Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    # Load ADV Network
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
