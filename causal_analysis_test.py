@@ -387,7 +387,7 @@ def worst_test():
     z_net.eval()
 
     attack_module = {}
-    eps_list = [0.015, 0.03, 0.045, 0.06]
+    eps_list = [0.03, 0.06, 0.12, 0.24, 0.48, 0.96]
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
     for attack_name in ['fgsm', 'pgd', 'cw_linf']:
         args.attack = attack_name
