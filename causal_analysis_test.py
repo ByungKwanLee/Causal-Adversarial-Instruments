@@ -22,14 +22,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=1, type=float)
+parser.add_argument('--batch_size', default=256, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -347,7 +347,7 @@ def inst_visualization():
         #[23, 30, 33, 41, 46, 48, 61, 71, 105, 114, 118, 129, 141, 269, 287, 414, 426] # imagenet
         inputs, targets = inputs.cuda(), targets.cuda()
 
-        if batch_idx in [7306, 7383, 7487, 7543, 7874, 8046]:
+        if batch_idx in [4930, 4886, 4837, 4825, 4678, 4566, 4416, 4406, 4373, 4286, 4219, 4051, 4013, 3966, 3895]:
             adv_inputs = attack(inputs, targets)
             adv_feature = net(adv_inputs, pop=True)
             _, adv_pred = net(adv_feature.clone(), int=True).max(1)
@@ -381,11 +381,74 @@ def inst_visualization():
 
                 inst_vis(inputs, inv, save_dir, batch_idx)
 
+def worst_test():
+    net.eval()
+    c_net.eval()
+    z_net.eval()
+
+    attack_module = {}
+    eps_list = [0.015, 0.03, 0.045, 0.06]
+    # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
+    for attack_name in ['fgsm', 'pgd', 'cw_linf']:
+        args.attack = attack_name
+        attack_module[attack_name] = []
+        for eps in eps_list:
+            if args.dataset == 'imagenet' or args.dataset == 'tiny':
+                attack_module[attack_name].append(attack_loader(net=net, attack=args.attack,
+                                                           eps= eps/4 if args.dataset == 'imagenet' else eps/2,
+                                                           steps=args.steps))
+            else:
+                attack_module[attack_name].append(attack_loader(net=net, attack=args.attack, eps=eps, steps=args.steps))
+
+    for key in attack_module:
+        for idx, attack in enumerate(attack_module[key]):
+
+            total = 0
+            adv_correct, causal_correct, inst_correct, treat_correct = 0, 0, 0, 0
+            prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+            for batch_idx, (inputs, targets) in prog_bar:
+                inputs, targets = inputs.cuda(), targets.cuda()
+                adv_inputs = attack(inputs, targets)
+
+                adv_feature = net(adv_inputs, pop=True)
+                cln_feature = net(inputs, pop=True)
+                residual = adv_feature - cln_feature
+
+                adv_output = net(adv_feature.clone(), int=True)
+
+                inst_feature = z_net(residual)
+                inst_output = net(cln_feature.clone() + inst_feature.clone(), int=True)
+
+                treat_feature = cln_feature + c_net(residual)
+                treat_output = net(treat_feature.clone(), int=True)
+
+                causal_feature = c_net(inst_feature)
+                causal_output = net(cln_feature.clone() + causal_feature.clone(), int=True)
+
+                _, adv_predicted = adv_output.max(1)
+                _, inst_predicted = inst_output.max(1)
+                _, treat_predicted = treat_output.max(1)
+                _, causal_predicted = causal_output.max(1)
+
+                total += targets.size(0)
+                adv_correct += adv_predicted.eq(targets).sum().item()
+                inst_correct += inst_predicted.eq(targets).sum().item()
+                treat_correct += treat_predicted.eq(targets).sum().item()
+                causal_correct += causal_predicted.eq(targets).sum().item()
+
+                desc = ('[Test/%s/%.3f] Adv: %.2f%% | Inst: %.2f%%| Treat: %.2f%% | Causal: %.2f%%'
+                        % (key, eps_list[idx], 100. * adv_correct / total, 100. * inst_correct / total, 100. * treat_correct / total,
+                           100. * causal_correct / total))
+                prog_bar.set_description(desc, refresh=True)
+
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
     #visualizaition()
     #class_prediction()
     #test()
-    inst_visualization()
+    #inst_visualization()
+    worst_test()
+
+
 
