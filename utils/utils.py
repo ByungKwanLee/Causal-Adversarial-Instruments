@@ -527,40 +527,6 @@ class MixAttack(object):
     def _iter(self):
         return self.current_iter
 
-class MixAttackforCausal(object):
-    def __init__(self, net, c_net, slowattack, fastattack, train_iters):
-        self.net = net
-        self.c_net = c_net
-        self.slowattack = slowattack
-        self.fastattack = fastattack
-        self.train_iters = train_iters
-        self.ratio = 0.3
-        self.current_iter = 0
-
-    def __call__(self, inputs, targets):
-        # training
-        if self.c_net.training:
-            adv_inputs = self.slowattack(inputs, targets) \
-                if self._iter < self.train_iters * self.ratio else self.fastattack(inputs, targets)
-            self.iter()
-            self.check()
-        # testing
-        else:
-            adv_inputs = self.fastattack(inputs, targets)
-        return adv_inputs
-
-    def iter(self):
-        self.current_iter = self.current_iter+1
-
-    def check(self):
-        if self.train_iters == self.current_iter:
-            self.current_iter = 0
-
-    @property
-    def _iter(self):
-        return self.current_iter
-
-
 # awp package
 EPS = 1E-20
 def diff_in_weights(model, proxy):
