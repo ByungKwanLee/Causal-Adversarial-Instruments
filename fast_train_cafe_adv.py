@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
-parser.add_argument('--epoch', default=4, type=int)
+parser.add_argument('--epoch', default=2, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -62,7 +62,6 @@ best_acc = 0
 scaler = GradScaler()
 
 def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack):
-    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
     net.train()
     c_net.eval()
     train_loss = 0
@@ -86,19 +85,21 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
 
             # adv feature
             adv_feature = net(adv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
 
             # causal feature and output
-            causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+            del_causal = c_net(adv_feature - clean_feature)
+            causal_feature = clean_feature + del_causal
             causal_outputs = net(causal_feature.clone(), int=True)
 
-            # inv causal feature
-            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+        # causal inversion
+        inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
 
+        with autocast():
             # again inv causal feature for ADV
-            inv_outputs = net(inv_inputs)
-            adv_outputs = net(adv_inputs)
-
-            loss = KL(adv_outputs, inv_outputs.detach())
+            inv_feature = net(inv_inputs, pop=True)
+            causal_loss = (inv_feature-clean_feature-del_causal).square().mean()
+            loss = F.cross_entropy(adv_outputs, targets) + causal_loss
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
@@ -200,7 +201,9 @@ def test(net, testloader, attack, rank):
             print('Saving~ ./checkpoint/causal/%s/%s_cafeadv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
-
+def causal_loss(logits_causal, logits_adv):
+    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
+    return (KL(logits_adv, logits_causal)).mean()
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 

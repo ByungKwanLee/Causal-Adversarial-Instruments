@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='cafetrades', type=str)
+parser.add_argument('--base', default='cafehat', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()

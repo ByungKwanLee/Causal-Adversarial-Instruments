@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -62,7 +62,7 @@ best_acc = 0
 scaler = GradScaler()
 
 
-def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
     std.eval()
     train_loss = 0
@@ -77,6 +77,10 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
+        # causal awp
+        awp_obj = awp.calc_awp(adv_inputs=adv_inputs, targets=targets)
+        awp.perturb(awp_obj)
+
         # Accerlating forward propagation
         optimizer.zero_grad()
         with autocast():
@@ -84,12 +88,15 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack):
             adv_outputs = net(adv_inputs)
             hat_outputs = net(inputs + 2*(adv_inputs-inputs))
             hat_target = std(adv_inputs).max(1)[1]
-            loss = trades_loss(outputs, adv_outputs, targets)+0.5*F.cross_entropy(hat_outputs, hat_target)
+            loss = trades_loss(outputs, adv_outputs, targets)+0.25*F.cross_entropy(hat_outputs, hat_target)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        # awp restore
+        awp.restore(awp_obj)
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
@@ -194,7 +201,7 @@ def trades_loss(logits,
     criterion_kl = nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(6) * loss_robust
+    loss = loss_natural + float(4) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -217,6 +224,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    proxy = get_network(network=args.network,
+                        depth=args.depth,
+                        dataset=args.dataset)
+    proxy = torch.nn.SyncBatchNorm.convert_sync_batchnorm(proxy)
+    proxy = proxy.to(memory_format=torch.channels_last).cuda()
+    proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
+
+
     # init std model and Distributed Data Parallel
     std = get_network(network=args.network,
                       depth=args.depth,
@@ -224,6 +239,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     std = torch.nn.SyncBatchNorm.convert_sync_batchnorm(std)
     std = std.to(memory_format=torch.channels_last).cuda()
     std = torch.nn.parallel.DistributedDataParallel(std, device_ids=[rank], output_device=[rank])
+
+    # awp adversary
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+
 
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
@@ -234,6 +253,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
+    proxy.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
@@ -260,7 +280,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack)
+        train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
         test(net, testloader, attack, rank)
 
 

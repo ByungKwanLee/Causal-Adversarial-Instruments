@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=4, type=int)
+parser.add_argument('--epoch', default=2, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -63,6 +63,7 @@ scaler = GradScaler()
 
 
 def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack):
+    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
     net.train()
     c_net.eval()
     train_loss = 0
@@ -88,16 +89,20 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
             adv_feature = net(adv_inputs, pop=True)
 
             # causal feature and output
-            causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+            del_causal = c_net(adv_feature - clean_feature)
+            causal_feature = clean_feature + del_causal
             causal_outputs = net(causal_feature.clone(), int=True)
 
-            # inv causal feature
-            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
-
+        # inv causal feature
+        inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+        with autocast():
             # again inv causal feature for TRADES
-            inv_outputs = net(inv_inputs)
-            adv_outputs = net(adv_inputs)
-            loss = trades_loss(inv_outputs, adv_outputs, targets)
+            inv_feature = net(inv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
+            clean_outputs = net(clean_feature.clone(), int=True)
+            causal_loss = (inv_feature-clean_feature-del_causal).square().mean()
+            loss = trades_loss(clean_outputs, adv_outputs, targets) + causal_loss
+
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -200,14 +205,13 @@ def test(net, testloader, attack, rank):
                                                                             args.network,
                                                                             args.depth))
 
-
 def trades_loss(logits,
                 logits_adv,
                 targets):
     criterion_kl = nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(2) * loss_robust
+    loss = loss_natural + float(4) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -243,8 +247,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
-    # Load TRADES Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_trades_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    # Load ADV Network
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)

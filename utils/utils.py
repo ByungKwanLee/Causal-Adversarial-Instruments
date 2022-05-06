@@ -450,8 +450,9 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
                 causal_outputs = net(causal_feature.clone(), int=True)
                 causal_targets = causal_outputs.max(1)[1]
 
-                # inv causal feature
-                inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+            # inv causal feature
+            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+            with autocast():
                 inv_feature = net(inv_inputs, pop=True)
                 inv_outputs = net(inv_feature.clone(), int=True)
 
@@ -492,6 +493,39 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
         rprint(f'{key}: Inv -> {100-100. * normal_correct_inv / total:.2f}%', rank)
         rprint(f'{key}: Clean -> {100-100. * normal_correct_clean / total:.2f}%', rank)
         rprint(f'{key}: Adv -> {100-100. * normal_correct_adv / total:.2f}%', rank)
+
+
+class MixAttack(object):
+    def __init__(self, net, slowattack, fastattack, train_iters):
+        self.net = net
+        self.slowattack = slowattack
+        self.fastattack = fastattack
+        self.train_iters = train_iters
+        self.ratio = 0.3
+        self.current_iter = 0
+
+    def __call__(self, inputs, targets):
+        # training
+        if self.net.training:
+            adv_inputs = self.slowattack(inputs, targets) \
+                if self._iter < self.train_iters * self.ratio else self.fastattack(inputs, targets)
+            self.iter()
+            self.check()
+        # testing
+        else:
+            adv_inputs = self.fastattack(inputs, targets)
+        return adv_inputs
+
+    def iter(self):
+        self.current_iter = self.current_iter+1
+
+    def check(self):
+        if self.train_iters == self.current_iter:
+            self.current_iter = 0
+
+    @property
+    def _iter(self):
+        return self.current_iter
 
 
 # awp package
