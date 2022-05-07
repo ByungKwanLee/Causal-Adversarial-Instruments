@@ -219,14 +219,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=2/255, steps=args.steps)
-    elif args.network == 'wide' and args.dataset == 'tiny':
+    elif args.dataset == 'tiny':
         rprint('PGD and FGSM MIX training', rank)
         pgd_attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
         fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
         attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
-    elif args.dataset == 'tiny':
-        rprint('PGD training', rank)
-        attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
+    # elif args.dataset == 'tiny':
+    #     rprint('PGD training', rank)
+    #     attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

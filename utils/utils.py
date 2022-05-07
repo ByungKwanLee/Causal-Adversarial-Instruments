@@ -431,6 +431,10 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
         kl_clean = 0
         kl_adv = 0
 
+        feat_inv = 0
+        feat_clean = 0
+        feat_adv = 0
+
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
         for batch_idx, (inputs, targets) in prog_bar:
             inputs, targets = inputs.cuda(), targets.cuda()
@@ -461,6 +465,11 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
                 kl_clean += KL (clean_outputs, causal_outputs).item()
                 kl_adv += KL(adv_outputs, causal_outputs).item()
 
+                # L2
+                feat_inv += (inv_feature-causal_feature).square().mean(dim=(1,2,3)).sqrt().mean().item()
+                feat_clean += (clean_feature-causal_feature).square().mean(dim=(1,2,3)).sqrt().mean().item()
+                feat_adv += (adv_feature-causal_feature).square().mean(dim=(1,2,3)).sqrt().mean().item()
+
             # Causal Acc
             total += causal_targets.size(0)
             causal_correct_inv += inv_outputs.max(1)[1].eq(causal_targets).sum().item()
@@ -483,6 +492,10 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
         rprint(f'{key}: Clean -> {kl_clean/batch_idx:.3f}', rank)
         rprint(f'{key}: Adv -> {kl_adv/batch_idx:.3f}', rank)
 
+        rprint('------------------Feat------------------', rank)
+        rprint(f'{key}: Inv -> {feat_inv/batch_idx:.3f}', rank)
+        rprint(f'{key}: Clean -> {feat_clean/batch_idx:.3f}', rank)
+        rprint(f'{key}: Adv -> {feat_adv/batch_idx:.3f}', rank)
 
         rprint('------------------Causal ACC------------------', rank)
         rprint(f'{key}: Inv -> {100-100. * causal_correct_inv / total:.2f}%', rank)
