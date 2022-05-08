@@ -84,9 +84,11 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
 
             # clean feature
             clean_feature = net(inputs, pop=True)
+            clean_outputs = net(clean_feature.clone(), int=True)
 
             # adv feature
             adv_feature = net(adv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
 
             # causal feature and output
             del_causal = c_net(adv_feature - clean_feature)
@@ -97,11 +99,8 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
         inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
         with autocast():
             # again inv causal feature for TRADES
-            inv_feature = net(inv_inputs, pop=True)
-            adv_outputs = net(adv_feature.clone(), int=True)
-            clean_outputs = net(clean_feature.clone(), int=True)
-            causal_loss = (inv_feature-clean_feature-del_causal).square().mean()
-            loss = trades_loss(clean_outputs, adv_outputs, targets) + causal_loss
+            inv_outputs = net(inv_inputs)
+            loss = trades_loss(clean_outputs, adv_outputs, targets) + causal_loss(inv_outputs, causal_outputs)
 
 
         # Accerlating backward propagation

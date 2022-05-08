@@ -20,7 +20,7 @@ parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='2', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 def main_worker():
@@ -68,7 +68,7 @@ def main_worker():
     inv_causal = attack_loader(net=net, attack='causalpgd', eps=4/255 if args.dataset == 'tiny' else 0.03, steps=10)
 
     # test inversion
-    test_inversion(net, c_net, testloader, attack_list=['fgsm', 'pgd', 'cw_linf'], eps=4/255 if args.dataset == 'tiny' else 0.03, inv_causal=inv_causal, rank=0)
+    test_inversion(net, c_net, testloader, attack_list=['pgd'], eps=4/255 if args.dataset == 'tiny' else 0.03, inv_causal=inv_causal, rank=0)
 
 if __name__ == '__main__':
     main_worker()

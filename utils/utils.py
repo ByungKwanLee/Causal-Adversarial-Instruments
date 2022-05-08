@@ -408,11 +408,10 @@ def test_blackbox(plain_net, adv_net, testloader, attack_list, eps, rank):
 
 def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
     KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
-
     net.eval()
     c_net.eval()
 
-    eps_list = [eps / 2, eps, eps * 3 / 2]
+    eps_list = [eps]
 
     attack_module = {}
     for attack_name in attack_list:
@@ -444,7 +443,8 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
                     # causal feature and output
                     causal_feature = clean_feature + c_net(adv_feature - clean_feature)
                     causal_outputs = net(causal_feature.clone(), int=True)
-                    causal_targets = causal_outputs.max(1)[1]
+
+
 
                 # inv causal feature
                 inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
@@ -457,15 +457,20 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
                     kl_clean += KL(clean_outputs, causal_outputs).item()
                     kl_adv += KL(adv_outputs, causal_outputs).item()
 
-                desc = ('[Inv/%s] KLD (Inv: %.6f%%, Clean: %.6f%%, Adv: %.6f%%)'
-                        % (key, 10**3*kl_inv/(batch_idx+1), 10**3*kl_clean/(batch_idx+1), 10**3*kl_adv/(batch_idx+1)))
+
+
+                desc = ('[%s] KLD (Inv: %.3f, Clean: %.3f, Adv: %.3f), Feat (Inv: %.3f, Clean: %.3f, Adv: %.3f)'
+                        % (key, 10**3*kl_inv/(batch_idx+1), 10**3*kl_clean/(batch_idx+1), 10**3*kl_adv/(batch_idx+1),
+                           feat_inv/(batch_idx+1), feat_clean/(batch_idx+1), feat_adv/(batch_idx+1)))
                 prog_bar.set_description(desc, refresh=True)
 
             rprint('------------------KLD------------------', rank)
-            rprint(f'{key}/{eps_list[idx]:.3f}: Inv -> {10**3*kl_inv/(batch_idx+1):.6f}', rank)
-            rprint(f'{key}/{eps_list[idx]:.3f}: Clean -> {10**3*kl_clean/(batch_idx+1):.6f}', rank)
-            rprint(f'{key}/{eps_list[idx]:.3f}: Adv -> {10**3*kl_adv/(batch_idx+1):.6f}', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Inv -> {10**3*kl_inv/(batch_idx+1):.3f}', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Clean -> {10**3*kl_clean/(batch_idx+1):.3f}', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Adv -> {10**3*kl_adv/(batch_idx+1):.3f}', rank)
             rprint('---------------------------------------', rank)
+
+
 
 
 class MixAttack(object):
@@ -554,3 +559,9 @@ class AdvWeightPerturb(object):
 
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
+
+
+# Causal Package
+def causal_loss(logits_inv, logits_causal):
+    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
+    return (KL(logits_inv, logits_causal)).mean()

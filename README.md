@@ -29,11 +29,13 @@ on Volta GPU architecture.
 * [x] **[MART]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
 * [x] **[AWP]** batchsize (128), learning rate (0.001), epoch (4), beta(TR 4)
 * [x] **[HELP]** batchsize (128), learning rate (0.001), epoch (4), beta(TR 4)
+---
+* [x] **[CAFE-AT]** batchsize (128), learning rate (0.001), epoch (4)
 * [x] **[CAFE-TRADES]** batchsize (128), learning rate (0.001), epoch (4), beta (TR 4)
 * [x] **[CAFE-MART]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 3)
 * [x] **[CAFE-AWP]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
 * [x] **[CAFE-HELP]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
-
+---
 ### Mid-dimensional dataset (Tiny-ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.3), epoch (30)
 * [x] **[AT]**  batchsize (128), learning rate (0.1), epoch (4)
@@ -41,11 +43,14 @@ on Volta GPU architecture.
 * [x] **[MART]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
 * [x] **[AWP]** batchsize (128), learning rate (0.001), epoch (4), beta(TR 4)
 * [x] **[HELP]** batchsize (128), learning rate (0.001), epoch (4), beta(TR 4)
+
+---
+* [x] **[CAFE-AT]** batchsize (128), learning rate (0.001), epoch (4)
 * [x] **[CAFE-TRADES]** batchsize (128), learning rate (0.001), epoch (4), beta (TR 4)
 * [x] **[CAFE-MART]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 3)
 * [x] **[CAFE-AWP]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
 * [x] **[CAFE-HELP]** batchsize (128), learning rate (0.001), epoch (4), beta(MA 1)
-
+---
 ### High-dimensional dataset (ImageNet)
 * [x] **[standard]** batchsize (128), learning rate (0.1), epoch (30)
 * [x] **[AT]** batchsize (128), learning rate (0.1), epoch (30)

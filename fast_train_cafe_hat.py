@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -88,9 +88,11 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
 
             # clean feature
             clean_feature = net(inputs, pop=True)
+            clean_outputs = net(clean_feature.clone(), int=True)
 
             # adv feature
             adv_feature = net(adv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
 
             # causal feature and output
             del_causal = c_net(adv_feature - clean_feature)
@@ -102,15 +104,12 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
 
         with autocast():
             # again inv causal feature for HELP
-            inv_feature = net(inv_inputs, pop=True)
-            adv_outputs = net(adv_feature.clone(), int=True)
-            clean_outputs = net(clean_feature.clone(), int=True)
+            inv_outputs = net(inv_inputs)
             hat_outputs = net(inputs + 2*(adv_inputs-inputs))
             hat_target = std(adv_inputs).max(1)[1]
-            causal_loss = (inv_feature - clean_feature - del_causal).square().mean()
 
             loss = mart_loss(clean_outputs, adv_outputs, targets)\
-                   +0.5*F.cross_entropy(hat_outputs, hat_target) + causal_loss
+                   +0.5*F.cross_entropy(hat_outputs, hat_target) + causal_loss(inv_outputs, causal_outputs)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()

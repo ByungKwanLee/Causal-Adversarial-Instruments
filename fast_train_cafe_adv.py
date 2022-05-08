@@ -94,12 +94,10 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, 
 
         # causal inversion
         inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
-
         with autocast():
             # again inv causal feature for ADV
-            inv_feature = net(inv_inputs, pop=True)
-            causal_loss = (inv_feature-clean_feature-del_causal).square().mean()
-            loss = F.cross_entropy(adv_outputs, targets) + causal_loss
+            inv_outputs = net(inv_inputs)
+            loss = F.cross_entropy(adv_outputs, targets) + causal_loss(inv_outputs, causal_outputs)
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
@@ -201,9 +199,6 @@ def test(net, testloader, attack, rank):
             print('Saving~ ./checkpoint/causal/%s/%s_cafeadv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
-def causal_loss(logits_causal, logits_adv):
-    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
-    return (KL(logits_adv, logits_causal)).mean()
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
