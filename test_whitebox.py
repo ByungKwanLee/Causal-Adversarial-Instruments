@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--base', default='cafehat', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='cafemart', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='7', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 

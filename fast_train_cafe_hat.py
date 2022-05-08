@@ -38,7 +38,7 @@ parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
-parser.add_argument('--epoch', default=2, type=int)
+parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -305,9 +305,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('PGD training', rank)
-        attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalpgd', eps=4/255, steps=args.steps)
+        rprint('PGD and FGSM MIX training', rank)
+        pgd_attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
+        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4 / 255, steps=args.steps)
+        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
