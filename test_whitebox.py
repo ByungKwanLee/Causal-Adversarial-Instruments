@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='cafemart', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--base', default='awp', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='7', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 
@@ -61,7 +61,7 @@ def main_worker():
     checkpoint_module(checkpoint['net'], net)
 
     # test
-    test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'],
+    test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'],
                   eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
     # test_whitebox(net, testloader, attack_list=['plain', 'pgd'], eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
 

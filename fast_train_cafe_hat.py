@@ -109,7 +109,7 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
             hat_target = std(adv_inputs).max(1)[1]
 
             loss = mart_loss(clean_outputs, adv_outputs, targets)\
-                   +0.5*F.cross_entropy(hat_outputs, hat_target) + causal_loss(inv_outputs, causal_outputs)
+                   +0.25*F.cross_entropy(hat_outputs, hat_target) + causal_loss(inv_outputs, causal_outputs)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -226,7 +226,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
+    loss = loss_adv + float(3) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):

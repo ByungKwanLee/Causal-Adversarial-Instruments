@@ -417,7 +417,7 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
     for attack_name in attack_list:
         attack_module[attack_name] = []
         for epsilon in eps_list:
-            attack_module[attack_name].append(attack_loader(net=net, attack=attack_name, eps=epsilon, steps=30))
+            attack_module[attack_name].append(attack_loader(net=net, attack=attack_name, eps=epsilon, steps=10))
 
     for key in attack_module:
         for idx, attack in enumerate(attack_module[key]):
@@ -459,9 +459,8 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
 
 
 
-                desc = ('[%s] KLD (Inv: %.3f, Clean: %.3f, Adv: %.3f), Feat (Inv: %.3f, Clean: %.3f, Adv: %.3f)'
-                        % (key, 10**3*kl_inv/(batch_idx+1), 10**3*kl_clean/(batch_idx+1), 10**3*kl_adv/(batch_idx+1),
-                           feat_inv/(batch_idx+1), feat_clean/(batch_idx+1), feat_adv/(batch_idx+1)))
+                desc = ('[%s] KLD (Inv: %.3f, Clean: %.3f, Adv: %.3f)'
+                        % (key, 10**3*kl_inv/(batch_idx+1), 10**3*kl_clean/(batch_idx+1), 10**3*kl_adv/(batch_idx+1)))
                 prog_bar.set_description(desc, refresh=True)
 
             rprint('------------------KLD------------------', rank)
