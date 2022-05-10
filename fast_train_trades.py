@@ -27,9 +27,10 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--NAME', default='TRADES', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
@@ -228,8 +229,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # Attack loader
     if args.dataset == 'tiny':
         rprint('PGD and FGSM MIX training', rank)
-        pgd_attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
-        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4 / 255, steps=args.steps)
+        pgd_attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
+        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
         attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
