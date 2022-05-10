@@ -15,18 +15,11 @@ class FastCausalFGSM(Attack):
     def forward(self, images, labels, causal_outputs):
 
         images = images.clone().detach().to(self.device)
-        labels = labels.clone().detach().to(self.device)
 
         adv_images = images.clone().detach()
 
         # Starting at a uniformly random point
         adv_images = adv_images + torch.empty_like(adv_images).uniform_(-self.eps, self.eps)
-
-        if self._targeted:
-            target_labels = self._get_target_label(images, labels)
-
-        loss = torch.nn.CrossEntropyLoss()
-
         adv_images.requires_grad = True
 
         # Accelarating forward propagation
@@ -34,7 +27,6 @@ class FastCausalFGSM(Attack):
             outputs = self.model(adv_images)
 
             # Calculate loss
-            # cost = loss(outputs, labels)
             cost = (outputs.softmax(dim=1) * (outputs.softmax(dim=1).log() - causal_outputs.softmax(dim=1).log())).mean()
 
         # Accelerating Gradient

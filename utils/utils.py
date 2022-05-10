@@ -449,8 +449,7 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
                 # inv causal feature
                 inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
                 with autocast():
-                    inv_feature = net(inv_inputs, pop=True)
-                    inv_outputs = net(inv_feature.clone(), int=True)
+                    inv_outputs = net(inv_inputs)
 
                     # KLD
                     kl_inv += KL(inv_outputs, causal_outputs).item()
@@ -469,7 +468,37 @@ def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
             rprint(f'{key}/{eps_list[idx]:.3f}: Adv -> {10**3*kl_adv/(batch_idx+1):.3f}', rank)
             rprint('---------------------------------------', rank)
 
+def inv_eps(dataset, network):
 
+    if dataset == 'cifar10' and network=='vgg':
+        inv_eps = 0.03
+
+    elif dataset == 'cifar10' and network == 'resnet':
+        inv_eps = 4/255
+
+    elif dataset == 'cifar10' and network == 'wide':
+        inv_eps = 2/255
+
+    elif dataset == 'svhn' and network=='vgg':
+        inv_eps = 4/255
+
+    elif dataset == 'svhn' and network=='resnet':
+        inv_eps = 1/255
+
+    elif dataset == 'svhn' and network=='wide':
+        inv_eps = 1/255
+
+    elif dataset == 'tiny' and network=='vgg':
+        inv_eps = 2/255
+
+    elif dataset == 'tiny' and network == 'resnet':
+        inv_eps = 1/255
+
+    elif dataset == 'tiny' and network == 'wide':
+        inv_eps = 1/255
+
+    print(f'Data: {dataset}, Net: {network}, InvEps: {inv_eps*255:.1f}')
+    return inv_eps
 
 
 class MixAttack(object):

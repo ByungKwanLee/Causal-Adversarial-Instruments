@@ -287,13 +287,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         pgd_attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
         fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4 / 255, steps=args.steps)
         attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
-        slow_causal = attack_loader(net=net, attack='causalpgd', eps=4 / 255, steps=args.steps)
-        fast_causal = attack_loader(net=net, attack='causalfgsm', eps=4 / 255, steps=args.steps)
+
+        slow_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=args.steps)
+        fast_causal = attack_loader(net=net, attack='causalfgsm', eps=inv_eps(args.dataset, args.network), steps=args.steps)
         inv_causal = MixAttack(net=net, slowattack=slow_causal, fastattack=fast_causal, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalpgd', eps=args.eps, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=args.steps)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
