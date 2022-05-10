@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='MART', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
@@ -197,7 +197,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
+    loss = loss_adv + float(3) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -234,10 +234,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('PGD and FGSM MIX training', rank)
-        pgd_attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
-        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4 / 255, steps=args.steps)
-        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
+        rprint('FGSM training', rank)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

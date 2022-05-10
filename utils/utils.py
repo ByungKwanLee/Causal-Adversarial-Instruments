@@ -590,6 +590,6 @@ class AdvWeightPerturb(object):
 
 
 # Causal Package
-def causal_loss(logits_inv, logits_causal):
+def causal_loss(logits_adv, logits_inv):
     KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
-    return (KL(logits_inv, logits_causal)).mean()
+    return (KL(logits_adv, logits_inv)).mean()

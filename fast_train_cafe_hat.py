@@ -28,9 +28,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='CAFE-HELP', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -110,7 +110,7 @@ def train(net, std, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_cau
             hat_target = std(adv_inputs).max(1)[1]
 
             loss = mart_loss(clean_outputs, adv_outputs, targets)\
-                   +0.25*F.cross_entropy(hat_outputs, hat_target) + causal_loss(inv_outputs, causal_outputs)
+                   +0.25*F.cross_entropy(hat_outputs, hat_target) + causal_loss(adv_outputs, inv_outputs)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -306,14 +306,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('PGD and FGSM MIX training', rank)
-        pgd_attack = attack_loader(net=net, attack='pgd', eps=4 / 255, steps=args.steps)
-        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4 / 255, steps=args.steps)
-        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
-
-        slow_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=args.steps)
-        fast_causal = attack_loader(net=net, attack='causalfgsm', eps=inv_eps(args.dataset, args.network), steps=args.steps)
-        inv_causal = MixAttack(net=net, slowattack=slow_causal, fastattack=fast_causal, train_iters=len(trainloader))
+        rprint('FGSM training', rank)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=inv_eps(args.dataset, args.network), steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
