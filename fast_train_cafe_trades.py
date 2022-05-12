@@ -29,10 +29,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='CAFE-TRADES', type=str)
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12200", type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
@@ -265,7 +265,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     if args.dataset == 'tiny':
         rprint('FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalfgsm', eps=inv_eps(args.dataset, args.network), steps=args.steps)
+        inv_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=3)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

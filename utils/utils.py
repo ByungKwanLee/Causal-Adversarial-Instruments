@@ -489,13 +489,13 @@ def inv_eps(dataset, network):
         inv_eps = 1/255
 
     elif dataset == 'tiny' and network=='vgg':
-        inv_eps = 2/255
+        inv_eps = 1/255
 
     elif dataset == 'tiny' and network == 'resnet':
-        inv_eps = 1/255
+        inv_eps = 0.5/255
 
     elif dataset == 'tiny' and network == 'wide':
-        inv_eps = 1/255
+        inv_eps = 0.5/255
 
     print(f'Data: {dataset}, Net: {network}, InvEps: {inv_eps*255:.1f}')
     return inv_eps
