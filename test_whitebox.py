@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='cafehat', type=str)
-parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='6', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--base', default='cafeawp', type=str)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 
@@ -63,7 +63,6 @@ def main_worker():
     # test
     test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'],
                   eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
-    # test_whitebox(net, testloader, attack_list=['plain', 'pgd'], eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
 
 if __name__ == '__main__':
     main_worker()

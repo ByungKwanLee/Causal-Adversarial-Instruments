@@ -27,18 +27,18 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--NAME', default='CAFE-AWP', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
+parser.add_argument('--NAME', default='Ablation-AWP', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12358", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--test_batch_size', default=64, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=256, type=float)
 parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
@@ -62,7 +62,7 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, inv_causal, awp):
+def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
     c_net.eval()
     train_loss = 0
@@ -97,12 +97,8 @@ def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, inv_
             causal_feature = clean_feature + c_net(adv_feature - clean_feature)
             causal_outputs = net(causal_feature.clone(), int=True)
 
-        # inv causal feature
-        inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
-        with autocast():
             # again inv causal feature for AWP
-            inv_outputs = net(inv_inputs)
-            loss = trades_loss(clean_outputs, adv_outputs, targets) + causal_loss(adv_outputs, inv_outputs)
+            loss = trades_loss(clean_outputs, adv_outputs, targets) + causal_loss(adv_outputs, causal_outputs.detach())
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -200,10 +196,10 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/causal/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/ablation/%s/%s_ablationawp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/causal/%s/%s_cafeawp_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/ablation/%s/%s_ablationawp_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
 
@@ -213,7 +209,7 @@ def trades_loss(logits,
     criterion_kl = nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(4) * loss_robust
+    loss = loss_natural + float(2) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -280,11 +276,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     if args.dataset == 'tiny':
         rprint('FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=3)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
-        inv_causal = attack_loader(net=net, attack='causalpgd', eps=inv_eps(args.dataset, args.network), steps=args.steps)
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
@@ -294,7 +288,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, inv_causal, awp)
+        train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
         test(net, testloader, attack, rank)
 
 

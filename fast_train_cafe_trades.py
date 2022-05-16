@@ -64,7 +64,6 @@ scaler = GradScaler()
 
 
 def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, inv_causal, attack):
-    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
     net.train()
     c_net.eval()
     train_loss = 0
