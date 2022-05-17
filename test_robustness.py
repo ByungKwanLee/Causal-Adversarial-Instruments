@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--base', default='cafeawp', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='ablationhat', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='6', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 
@@ -48,6 +48,9 @@ def main_worker():
     # Loading checkpoint
     if 'cafe' in args.base:
         checkpoint_name = 'checkpoint/causal/%s/%s_%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.base, args.network, args.depth)
+    elif 'ablation' in args.base:
+        checkpoint_name = 'checkpoint/ablation/%s/%s_%s_%s%s_best.t7' % (
         args.dataset, args.dataset, args.base, args.network, args.depth)
     else:
         if args.base == 'plain':
