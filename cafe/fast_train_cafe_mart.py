@@ -28,10 +28,10 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='CAFE-MART', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # learning parameter
@@ -215,7 +215,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(5) * loss_robust
+    loss = loss_adv + float(3) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
