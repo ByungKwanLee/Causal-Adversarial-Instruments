@@ -23,9 +23,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--network', default='resnet', type=str)
 
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
@@ -139,6 +139,31 @@ def test():
             # if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
             #     if batch_idx >= int(len(testloader) * 0.3):
             #         break
+
+def clean_test():
+    net.eval()
+    c_net.eval()
+    z_net.eval()
+
+    total = 0
+    correct = 0
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
+    for batch_idx, (inputs, targets) in prog_bar:
+        inputs, targets = inputs.cuda(), targets.cuda()
+
+        cln_feature = net(inputs, pop=True)
+
+        cln_output = net(cln_feature.clone(), int=True)
+
+        _, cln_predicted = cln_output.max(1)
+
+        total += targets.size(0)
+        correct += cln_predicted.eq(targets).sum().item()
+
+        desc = ('[Test] Clean: %.2f%%' % (100. * correct / total))
+        prog_bar.set_description(desc, refresh=True)
+
 
 def visualizaition():
     net.eval()
@@ -447,8 +472,9 @@ if __name__ == '__main__':
     #visualizaition()
     #class_prediction()
     #test()
+    clean_test()
     #inst_visualization()
-    worst_test()
+    #worst_test()
 
 
 
