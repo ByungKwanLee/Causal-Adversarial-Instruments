@@ -408,91 +408,97 @@ def test_blackbox(plain_net, adv_net, testloader, attack_list, eps, rank):
 
 def test_inversion(net, c_net, testloader, attack_list, eps, inv_causal, rank):
     KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1).mean()
-
     net.eval()
     c_net.eval()
 
+    eps_list = [eps]
+
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps, steps=30)
+        attack_module[attack_name] = []
+        for epsilon in eps_list:
+            attack_module[attack_name].append(attack_loader(net=net, attack=attack_name, eps=epsilon, steps=10))
 
     for key in attack_module:
-        total = 0
+        for idx, attack in enumerate(attack_module[key]):
 
-        causal_correct_inv = 0
-        causal_correct_clean = 0
-        causal_correct_adv = 0
+            kl_inv = 0
+            kl_clean = 0
+            kl_adv = 0
 
-        normal_correct_inv = 0
-        normal_correct_clean = 0
-        normal_correct_adv = 0
+            prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
+            for batch_idx, (inputs, targets) in prog_bar:
+                inputs, targets = inputs.cuda(), targets.cuda()
+                adv_inputs = attack(inputs, targets)
 
-        kl_inv = 0
-        kl_clean = 0
-        kl_adv = 0
+                with autocast():
+                    # clean feature
+                    clean_feature = net(inputs, pop=True)
+                    clean_outputs = net(clean_feature.clone(), int=True)
 
-        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
-        for batch_idx, (inputs, targets) in prog_bar:
-            inputs, targets = inputs.cuda(), targets.cuda()
-            adv_inputs = attack_module[key](inputs, targets)
+                    # adv feature
+                    adv_feature = net(adv_inputs, pop=True)
+                    adv_outputs = net(adv_feature.clone(), int=True)
 
-            with autocast():
-                # clean feature
-                clean_feature = net(inputs, pop=True)
-                clean_outputs = net(clean_feature.clone(), int=True)
-
-                # adv feature
-                adv_feature = net(adv_inputs, pop=True)
-                adv_outputs = net(adv_feature.clone(), int=True)
-
-                # causal feature and output
-                causal_feature = clean_feature + c_net(adv_feature - clean_feature)
-                causal_outputs = net(causal_feature.clone(), int=True)
-                causal_targets = causal_outputs.max(1)[1]
-
-            # inv causal feature
-            inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
-            with autocast():
-                inv_feature = net(inv_inputs, pop=True)
-                inv_outputs = net(inv_feature.clone(), int=True)
-
-                # KLD
-                kl_inv += KL(inv_outputs, causal_outputs).item()
-                kl_clean += KL (clean_outputs, causal_outputs).item()
-                kl_adv += KL(adv_outputs, causal_outputs).item()
-
-            # Causal Acc
-            total += causal_targets.size(0)
-            causal_correct_inv += inv_outputs.max(1)[1].eq(causal_targets).sum().item()
-            causal_correct_clean += clean_outputs.max(1)[1].eq(causal_targets).sum().item()
-            causal_correct_adv += adv_outputs.max(1)[1].eq(causal_targets).sum().item()
-
-            # Normal Acc
-            normal_correct_inv += inv_outputs.max(1)[1].eq(targets).sum().item()
-            normal_correct_clean += clean_outputs.max(1)[1].eq(targets).sum().item()
-            normal_correct_adv += adv_outputs.max(1)[1].eq(targets).sum().item()
-
-            desc = ('[Inv/%s] Causal (Inv: %.2f%%, Clean: %.2f%%, Adv: %.2f%%), Normal (Inv: %.2f%%, Clean: %.2f%%, Adv: %.2f%%)'
-                    % (key, 100. * causal_correct_inv / total, 100. * causal_correct_clean / total, 100. * causal_correct_adv / total,
-                       100. * normal_correct_inv / total, 100. * normal_correct_clean / total, 100. * normal_correct_adv / total))
-            prog_bar.set_description(desc, refresh=True)
+                    # causal feature and output
+                    causal_feature = clean_feature + c_net(adv_feature - clean_feature)
+                    causal_outputs = net(causal_feature.clone(), int=True)
 
 
-        rprint('------------------KLD------------------', rank)
-        rprint(f'{key}: Inv -> {kl_inv/batch_idx:.3f}', rank)
-        rprint(f'{key}: Clean -> {kl_clean/batch_idx:.3f}', rank)
-        rprint(f'{key}: Adv -> {kl_adv/batch_idx:.3f}', rank)
+
+                # inv causal feature
+                inv_inputs = inv_causal(inputs, targets, causal_outputs.detach())
+                with autocast():
+                    inv_outputs = net(inv_inputs)
+
+                    # KLD
+                    kl_inv += KL(inv_outputs, causal_outputs).item()
+                    kl_clean += KL(clean_outputs, causal_outputs).item()
+                    kl_adv += KL(adv_outputs, causal_outputs).item()
 
 
-        rprint('------------------Causal ACC------------------', rank)
-        rprint(f'{key}: Inv -> {100-100. * causal_correct_inv / total:.2f}%', rank)
-        rprint(f'{key}: Clean -> {100-100. * causal_correct_clean / total:.2f}%', rank)
-        rprint(f'{key}: Adv -> {100-100. * causal_correct_adv / total:.2f}%', rank)
 
-        rprint('------------------Normal ACC------------------', rank)
-        rprint(f'{key}: Inv -> {100-100. * normal_correct_inv / total:.2f}%', rank)
-        rprint(f'{key}: Clean -> {100-100. * normal_correct_clean / total:.2f}%', rank)
-        rprint(f'{key}: Adv -> {100-100. * normal_correct_adv / total:.2f}%', rank)
+                desc = ('[%s] KLD (Inv: %.3f, Clean: %.3f, Adv: %.3f)'
+                        % (key, 10**3*kl_inv/(batch_idx+1), 10**3*kl_clean/(batch_idx+1), 10**3*kl_adv/(batch_idx+1)))
+                prog_bar.set_description(desc, refresh=True)
+
+            rprint('------------------KLD------------------', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Inv -> {10**3*kl_inv/(batch_idx+1):.3f}', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Clean -> {10**3*kl_clean/(batch_idx+1):.3f}', rank)
+            rprint(f'{key}/{eps_list[idx]:.3f}: Adv -> {10**3*kl_adv/(batch_idx+1):.3f}', rank)
+            rprint('---------------------------------------', rank)
+
+def inv_eps(dataset, network):
+
+    if dataset == 'cifar10' and network=='vgg':
+        inv_eps = 0.03
+
+    elif dataset == 'cifar10' and network == 'resnet':
+        inv_eps = 4/255
+
+    elif dataset == 'cifar10' and network == 'wide':
+        inv_eps = 2/255
+
+    elif dataset == 'svhn' and network=='vgg':
+        inv_eps = 4/255
+
+    elif dataset == 'svhn' and network=='resnet':
+        inv_eps = 1/255
+
+    elif dataset == 'svhn' and network=='wide':
+        inv_eps = 1/255
+
+    elif dataset == 'tiny' and network=='vgg':
+        inv_eps = 1/255
+
+    elif dataset == 'tiny' and network == 'resnet':
+        inv_eps = 0.5/255
+
+    elif dataset == 'tiny' and network == 'wide':
+        inv_eps = 0.5/255
+
+    print(f'Data: {dataset}, Net: {network}, InvEps: {inv_eps*255:.1f}')
+    return inv_eps
 
 
 class MixAttack(object):
@@ -581,3 +587,9 @@ class AdvWeightPerturb(object):
 
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
+
+
+# Causal Package
+def causal_loss(logits_adv, logits_inv):
+    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
+    return (KL(logits_adv, logits_inv)).mean()

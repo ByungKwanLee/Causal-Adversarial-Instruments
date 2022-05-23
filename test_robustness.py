@@ -18,9 +18,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='cafehat', type=str)
+parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 args = parser.parse_args()
 
 
@@ -49,6 +49,9 @@ def main_worker():
     if 'cafe' in args.base:
         checkpoint_name = 'checkpoint/causal/%s/%s_%s_%s%s_best.t7' % (
         args.dataset, args.dataset, args.base, args.network, args.depth)
+    elif 'ablation' in args.base:
+        checkpoint_name = 'checkpoint/ablation/%s/%s_%s_%s%s_best.t7' % (
+        args.dataset, args.dataset, args.base, args.network, args.depth)
     else:
         if args.base == 'plain':
             checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
@@ -61,8 +64,8 @@ def main_worker():
     checkpoint_module(checkpoint['net'], net)
 
     # test
-    # test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'bim', 'mim', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'], rank=0)
-    test_whitebox(net, testloader, attack_list=['plain', 'pgd'], eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
+    test_whitebox(net, testloader, attack_list=['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'],
+                  eps=4/255 if args.dataset == 'tiny' else 0.03, rank=0)
 
 if __name__ == '__main__':
     main_worker()

@@ -27,17 +27,18 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
+parser.add_argument('--NAME', default='HELP', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12359", type=str)
 
 # learning parameter
 parser.add_argument('--learning_rate', default=0.001, type=float)
 parser.add_argument('--weight_decay', default=0.0002, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--batch_size', default=64, type=float)
+parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--epoch', default=4, type=int)
 
 # attack parameter only for CIFAR-10 and SVHN
@@ -61,8 +62,10 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
+
+def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
+    std.eval()
     train_loss = 0
     correct = 0
     total = 0
@@ -75,7 +78,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
-        # calculate awp
+        # causal awp
         awp_obj = awp.calc_awp(adv_inputs=adv_inputs, targets=targets)
         awp.perturb(awp_obj)
 
@@ -84,7 +87,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         with autocast():
             outputs = net(inputs)
             adv_outputs = net(adv_inputs)
-            loss = trades_loss(outputs, adv_outputs, targets)
+            hat_outputs = net(inputs + 2*(adv_inputs-inputs))
+            hat_target = std(adv_inputs).max(1)[1]
+            loss = trades_loss(outputs, adv_outputs, targets)+0.25*F.cross_entropy(hat_outputs, hat_target)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -147,8 +152,8 @@ def test(net, testloader, attack, rank):
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
+        inputs, targets = inputs.cuda(), targets.cuda()
 
         # Accerlating forward propagation
         with autocast():
@@ -183,12 +188,13 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_awp_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/pretrain/%s/%s_hat_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
+
 
 def trades_loss(logits,
                 logits_adv,
@@ -211,7 +217,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print("Use GPU: {} for training".format(gpu_list[rank]))
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    # init model and Distributed Data Parallel
+    # init robust model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
                       dataset=args.dataset)
@@ -220,14 +226,24 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
     proxy = get_network(network=args.network,
-                      depth=args.depth,
-                      dataset=args.dataset)
+                        depth=args.depth,
+                        dataset=args.dataset)
     proxy = torch.nn.SyncBatchNorm.convert_sync_batchnorm(proxy)
     proxy = proxy.to(memory_format=torch.channels_last).cuda()
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
+
+    # init std model and Distributed Data Parallel
+    std = get_network(network=args.network,
+                      depth=args.depth,
+                      dataset=args.dataset)
+    std = torch.nn.SyncBatchNorm.convert_sync_batchnorm(std)
+    std = std.to(memory_format=torch.channels_last).cuda()
+    std = torch.nn.parallel.DistributedDataParallel(std, device_ids=[rank], output_device=[rank])
+
     # awp adversary
     awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+
 
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
@@ -242,9 +258,16 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
+    # Load Plain Network
+    checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    std.load_state_dict(checkpoint['net'])
+    rprint(f'==> {checkpoint_name}', rank)
+    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('Fast FGSM training', rank)
+        rprint('FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
@@ -258,7 +281,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
+        train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
         test(net, testloader, attack, rank)
 
 

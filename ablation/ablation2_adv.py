@@ -12,6 +12,7 @@ from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
 
+
 # attack loader
 # from attack.attack import attack_loader
 from attack.fastattack import attack_loader
@@ -27,10 +28,11 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
+parser.add_argument('--NAME', default='Ablation2-ADV', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # learning parameter
@@ -61,9 +63,9 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
+    c_net.eval()
     train_loss = 0
     correct = 0
     total = 0
@@ -76,14 +78,25 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
-        # Accerlating forward propagation
+        # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            adv_outputs = net(adv_inputs)
-            loss = mart_loss(outputs, adv_outputs, targets)
 
-        # Accerlating backward propagation
+            # clean feature
+            clean_feature = net(inputs, pop=True)
+
+            # adv feature
+            adv_feature = net(adv_inputs, pop=True)
+            adv_outputs = net(adv_feature.clone(), int=True)
+
+            # causal feature and output
+            del_causal = c_net(adv_feature - clean_feature)
+            causal_feature = clean_feature + del_causal
+
+            # again inv causal feature for ADV
+            loss = F.cross_entropy(adv_outputs, targets) + (adv_feature-causal_feature.detach()).square().mean()
+
+        # Accelerating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -92,7 +105,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         lr_scheduler.step()
 
         train_loss += loss.item()
-        _, predicted = outputs.max(1)
+        _, predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -141,8 +154,8 @@ def test(net, testloader, attack, rank):
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
+        inputs, targets = inputs.cuda(), targets.cuda()
 
         # Accerlating forward propagation
         with autocast():
@@ -177,27 +190,12 @@ def test(net, testloader, attack, rank):
 
         best_acc = acc
         if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            torch.save(state, './checkpoint/ablation/%s/%s_ablation2adv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network,
                                                                                 args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
+            print('Saving~ ./checkpoint/ablation/%s/%s_ablation2adv_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                             args.network,
                                                                             args.depth))
-
-def mart_loss(logits,
-            logits_adv,
-            targets):
-    kl = torch.nn.KLDivLoss(reduction='none')
-    adv_probs = F.softmax(logits_adv, dim=1)
-    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
-    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
-    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
-    nat_probs = F.softmax(logits, dim=1)
-    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
-    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
-        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
-    return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
@@ -219,8 +217,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    # init causal net and Distributed Data Parallel
+    c_net = get_network(network='causal', depth=None, dataset=args.dataset, ch=True if args.network=='wide' else False)
+    c_net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(c_net)
+    c_net = c_net.to(memory_format=torch.channels_last).cuda()
+    c_net = torch.nn.parallel.DistributedDataParallel(c_net, device_ids=[rank], output_device=[rank])
+    do_freeze(c_net)
+
     # fast init dataloader
-    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
+    trainloader, testloader, _ = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
 
@@ -231,10 +236,17 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
+    # Load Causal Network
+    checkpoint_name = 'checkpoint/causal/%s/%s_causal_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    c_net.load_state_dict(checkpoint['c_net'])
+    rprint(f'==> {checkpoint_name}', rank)
+    rprint('==> Successfully Loaded Causal checkpoint..', rank)
+
     # Attack loader
     if args.dataset == 'tiny':
-        rprint('PGD training', rank)
-        attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
+        rprint('FGSM training', rank)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -247,9 +259,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # training and testing
     for epoch in range(args.epoch):
         rprint('\nEpoch: %d' % (epoch+1), rank)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+        train(net, c_net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)
-
 
 
 def run():

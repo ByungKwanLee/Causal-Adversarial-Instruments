@@ -20,10 +20,6 @@ class FastCausalPGD(Attack):
         Overridden.
         """
         images = images.clone().detach().to(self.device)
-        labels = labels.clone().detach().to(self.device)
-
-        loss = nn.CrossEntropyLoss()
-
         adv_images = images.clone().detach()
 
         if self.random_start:
@@ -37,10 +33,6 @@ class FastCausalPGD(Attack):
             # Accelerating forward propagation
             with autocast():
                 outputs = self.model(adv_images)
-
-                # Calculate loss
-                # cost = loss(outputs, labels) \
-                #        + (outputs.softmax(dim=1)*(outputs.softmax(dim=1).log()-causal_outputs.softmax(dim=1).log())).mean()
                 cost = (outputs.softmax(dim=1)*(outputs.softmax(dim=1).log()-causal_outputs.softmax(dim=1).log())).mean()
 
             # Update adversarial images with gradient scaler applied
