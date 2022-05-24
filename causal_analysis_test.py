@@ -9,6 +9,9 @@ from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
 from utils.visual_utils import *
+from sklearn.manifold import TSNE
+import pandas as pd
+import seaborn as sns
 
 # attack loader
 from attack.fastattack import attack_loader
@@ -22,14 +25,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='vgg', type=str)
 
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 
 parser.add_argument('--base', default='causal', type=str)
-parser.add_argument('--batch_size', default=256, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -67,7 +70,7 @@ assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory fou
 
 # Loading checkpoint
 net_checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-causal_checkpoint_name = 'checkpoint/pretrain/final_param/%s_causal_%s%s_best.t7' % (args.dataset, args.network, args.depth)
+causal_checkpoint_name = 'checkpoint/pretrain/ablation/%s_causal_%s%s_best.t7' % (args.dataset, args.network, args.depth)
 # causal_checkpoint_name = 'checkpoint/pretrain/%s/%s_causal_1_%s%s_E2_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
@@ -466,15 +469,170 @@ def worst_test():
                            100. * causal_correct / total))
                 prog_bar.set_description(desc, refresh=True)
 
+def tsne_test():
+    save_dir = './tsne/tSNE_' + str(args.dataset) + '_' + str(args.network)
+    check_dir(save_dir)
+
+    if args.dataset == 'cifar10':
+        olabel = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    elif args.dataset == 'svhn':
+        olabel = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+    # stack attack module
+    attack_module = {}
+
+    for attack_name in ['pgd']:
+        args.attack = attack_name
+        attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
+
+    for key in attack_module:
+
+        adv_features = []
+        inst_features = []
+        treat_features = []
+        causal_features = []
+        adv_labels = []
+        inst_labels = []
+        treat_labels = []
+        causal_labels = []
+
+        for batch_idx, (inputs, targets) in enumerate(tqdm(testloader)):
+            # dataloader parsing and generate adversarial examples
+            inputs, targets = inputs.cuda(), targets.cuda()
+            adv_inputs = attack_module[key](inputs, targets)
+
+            adv_feature = net(adv_inputs, pop=True)
+            cln_feature = net(inputs, pop=True)
+            residual = adv_feature - cln_feature
+
+            inst_feature = cln_feature + z_net(residual)
+            treat_feature = cln_feature + c_net(residual)
+            causal_feature = cln_feature + c_net(inst_feature)
+
+            b, c, h, w = adv_feature.size()
+
+            adv_output = net(adv_feature.clone(), int=True)
+            inst_output = net(inst_feature.clone(), int=True)
+            treat_output = net(treat_feature.clone(), int=True)
+            causal_output = net(causal_feature.clone(), int=True)
+
+            _, adv_predicted = adv_output.max(1)
+            _, inst_predicted = inst_output.max(1)
+            _, treat_predicted = treat_output.max(1)
+            _, causal_predicted = causal_output.max(1)
+
+            adv_feature = F.avg_pool2d(adv_feature, h).view(b, -1)
+            inst_feature = F.avg_pool2d(inst_feature, h).view(b, -1)
+            treat_feature = F.avg_pool2d(treat_feature, h).view(b, -1)
+            causal_feature = F.avg_pool2d(causal_feature, h).view(b, -1)
+
+            # if targets.item() != adv_predicted.item():
+            adv_features.append(adv_feature.cpu().detach().numpy())
+            inst_features.append(inst_feature.cpu().detach().numpy())
+            treat_features.append(treat_feature.cpu().detach().numpy())
+            causal_features.append(causal_feature.cpu().detach().numpy())
+
+            for l_idx in range(targets.size(0)):
+                adv_labels.append(olabel[adv_predicted[l_idx].item()])
+                inst_labels.append(olabel[inst_predicted[l_idx].item()])
+                treat_labels.append(olabel[treat_predicted[l_idx].item()])
+                causal_labels.append(olabel[causal_predicted[l_idx].item()])
+
+
+            if batch_idx == 50:
+                break
+
+        adv_features = np.concatenate(adv_features)
+        inst_features = np.concatenate(inst_features)
+        treat_features = np.concatenate(treat_features)
+        causal_features = np.concatenate(causal_features)
+        adv_labels = np.array(adv_labels)  # torch.cat(labels).cpu().detach().numpy()
+        inst_labels = np.array(inst_labels)
+        treat_labels = np.array(treat_labels)
+        causal_labels = np.array(causal_labels)
+
+        tsne = TSNE(n_components=2, perplexity=20)
+
+        adv_tsne = tsne.fit_transform(adv_features)
+        inst_tsne = tsne.fit_transform(inst_features)
+        treat_tsne = tsne.fit_transform(treat_features)
+        causal_tsne = tsne.fit_transform(causal_features)
+
+        adv_df = pd.DataFrame(adv_tsne, index=adv_tsne[0:, 1])
+        inst_df = pd.DataFrame(inst_tsne, index=inst_tsne[0:, 1])
+        treat_df = pd.DataFrame(treat_tsne, index=treat_tsne[0:, 1])
+        causal_df = pd.DataFrame(causal_tsne, index=causal_tsne[0:, 1])
+
+        adv_df['x'] = adv_tsne[:, 0]
+        adv_df['y'] = adv_tsne[:, 1]
+        adv_df['Label'] = adv_labels[:]
+
+        inst_df['x'] = inst_tsne[:, 0]
+        inst_df['y'] = inst_tsne[:, 1]
+        inst_df['Label'] = inst_labels[:]
+
+        treat_df['x'] = treat_tsne[:, 0]
+        treat_df['y'] = treat_tsne[:, 1]
+        treat_df['Label'] = treat_labels[:]
+
+        causal_df['x'] = causal_tsne[:, 0]
+        causal_df['y'] = causal_tsne[:, 1]
+        causal_df['Label'] = causal_labels[:]
+
+        plt1 = plt.figure(figsize=(5, 4), dpi=600)
+        sns.set_style("darkgrid", {'font.family': 'serif', 'font.serif': ['Times New Roman']})
+        g1 = sns.scatterplot(x="x", y="y", hue="Label", data=adv_df, palette="tab10", legend=False,
+                             alpha=0.7)
+        # g1.set_title("t-SNE result: Adv Feature")
+        g1.set(xticklabels=[])
+        g1.set(yticklabels=[])
+        g1.set_xlabel("Dimension 1", fontsize=10)
+        g1.set_ylabel("Dimension 2", fontsize=10)
+
+        plt1.savefig(save_dir + '/' + '%s_%s_adv_t-SNE.png'%(args.dataset, args.network))
+
+        plt2 = plt.figure(figsize=(5, 4), dpi=600)
+        g2 = sns.scatterplot(x="x", y="y", hue="Label", data=inst_df, palette="tab10", legend=False,
+                             alpha=0.7)
+        # g2.set_title("t-SNE result: Robust Feature")
+        g2.set(xticklabels=[])
+        g2.set(yticklabels=[])
+        g2.set_xlabel("Dimension 1", fontsize=10)
+        g2.set_ylabel("Dimension 2", fontsize=10)
+
+        plt2.savefig(save_dir + '/' + '%s_%s_inst_t-SNE.png'%(args.dataset, args.network))
+
+        plt3 = plt.figure(figsize=(5, 4), dpi=600)
+        g3 = sns.scatterplot(x="x", y="y", hue="Label", data=treat_df, palette="tab10", legend=False,
+                             alpha=0.7)
+        # g3.set_title("t-SNE result: Non-robust Feature")
+        g3.set(xticklabels=[])
+        g3.set(yticklabels=[])
+        g3.set_xlabel("Dimension 1", fontsize=10)
+        g3.set_ylabel("Dimension 2", fontsize=10)
+
+        plt3.savefig(save_dir + '/' + '%s_%s_treat_t-SNE.png'%(args.dataset, args.network))
+
+        plt4 = plt.figure(figsize=(5, 4), dpi=600)
+        g4 = sns.scatterplot(x="x", y="y", hue="Label", data=causal_df, palette="tab10", legend=False,
+                             alpha=0.7)
+        # g3.set_title("t-SNE result: Non-robust Feature")
+        g4.set(xticklabels=[])
+        g4.set(yticklabels=[])
+        g4.set_xlabel("Dimension 1", fontsize=10)
+        g4.set_ylabel("Dimension 2", fontsize=10)
+
+        plt4.savefig(save_dir + '/' + '%s_%s_causal_t-SNE.png' %(args.dataset, args.network))
+
 if __name__ == '__main__':
     set_random(777)
     #net_visualize()
     #visualizaition()
     #class_prediction()
     #test()
-    clean_test()
+    # clean_test()
     #inst_visualization()
     #worst_test()
-
+    tsne_test()
 
 

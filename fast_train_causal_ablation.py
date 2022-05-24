@@ -31,10 +31,10 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='resnet', type=str)
 
-parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--depth', default=18, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default='12351', type=str)
 
@@ -108,9 +108,8 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
             causal_output = net((cln_feature.clone() + causal_feature.clone()), int=True)
             treat_output = net(cln_feature.clone() + c_net(residual).clone(), int=True)
 
-            reg_loss = args.lamb * ((inst_feature - residual) ** 2).mean()
             inst_loss = -(onehot_target * F.log_softmax(causal_output) * F.log_softmax(inst_output)).sum(dim=1).mean()
-            max_total_loss = inst_loss + reg_loss
+            max_total_loss = inst_loss
 
         # Accerlating backward propagation
         scaler.scale(max_total_loss).backward()
@@ -142,7 +141,6 @@ def causal_train(epoch, net, c_net, z_net, trainloader, c_optimizer, inst_optimi
         if rank == 0:
             writer.add_scalar('Train_Loss/causal_loss', causal_loss, counter)
             writer.add_scalar('Train_Loss/inst_loss', inst_loss, counter)
-            writer.add_scalar('Train_Loss/reg_loss', reg_loss, counter)
             writer.add_scalar('Train_Loss/recon_loss', recon_loss, counter)
             writer.add_scalar('XE_Loss/causlXE_loss', ce_loss, counter)
             writer.add_scalar('XE_Loss/instXE_loss', ce_loss2, counter)
